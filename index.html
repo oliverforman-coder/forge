@@ -91,11 +91,16 @@ h1{font-size:30px;font-weight:700;margin:4px 0;letter-spacing:-.4px}
 .pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 11px;font-size:13px;font-weight:700;background:var(--s2);color:var(--am);font-variant-numeric:tabular-nums}
 .pill.done{background:var(--ok);color:#04342C;animation:pulse 1s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.55}}
-.ov{position:fixed;inset:0;z-index:50}
+/* Overlays track the *visible* viewport, so with the iPhone keyboard up a panel sits above it instead of behind it. */
+.ov{position:fixed;left:0;right:0;top:var(--vvt,0px);height:var(--vvh,100dvh);z-index:50}
+/* Search panels: fixed height, header stays put, only the results scroll — typing never moves the search box. */
+.sheet.full{top:calc(var(--st) + 6px);max-height:none;overflow:hidden;display:flex;flex-direction:column;padding-bottom:0}
+.sheet.full .sbody{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;margin:0 -16px;padding:0 16px calc(var(--sb) + 18px)}
 .bd{position:absolute;inset:0;background:rgba(0,0,0,.6)}
 .sheet{position:absolute;left:0;right:0;bottom:0;max-height:92dvh;overflow-y:auto;background:#141416;border-radius:22px 22px 0 0;padding:10px 16px calc(var(--sb) + 18px);max-width:560px;margin:0 auto}
 .ov.anim .bd{animation:fade .18s}
 .ov.anim .sheet{animation:up .22s ease-out}
+.ov.anim .sheet.full{animation:fade .18s}
 .grab{width:38px;height:5px;border-radius:3px;background:rgba(255,255,255,.2);margin:0 auto 10px}
 @keyframes up{from{transform:translateY(40px);opacity:0}}
 @keyframes fade{from{opacity:0}}
@@ -1703,11 +1708,11 @@ function sheet() {
     case 'picker': {
       const list = Object.values(db.exercises).sort((x, y) => x.name.localeCompare(y.name));
       b = `<h3>${s.mode === 'swap' ? 'Swap exercise' : 'Add exercise'}</h3>
-        <input id="pick-search" type="search" placeholder="Search exercise library" autocomplete="off">
+        <input id="pick-search" type="search" placeholder="Search exercise library" autocomplete="off" autocorrect="off" spellcheck="false">
         <button class="btn ghost" style="margin:10px 0" data-a="newEx">＋ New exercise</button>
-        <div class="list">${list.map(e => `<button class="card row" style="width:100%;padding:12px" data-a="pick" data-id="${e.id}" data-pn="${esc(e.name.toLowerCase())}">
+        <div class="sbody" data-keep="sbody-picker"><div class="list">${list.map(e => `<button class="card row" style="width:100%;padding:12px" data-a="pick" data-id="${e.id}" data-pn="${esc(e.name.toLowerCase())}">
           <div class="grow"><div class="ell" style="font-weight:600">${esc(e.name)}</div><div class="sub" style="font-size:12px">${esc(MUSCLES[e.prim] || e.muscle || '')}</div></div>
-          <div class="faint" style="font-size:12px">${esc(EQ[e.equip] || '')}</div></button>`).join('')}</div>`;
+          <div class="faint" style="font-size:12px">${esc(EQ[e.equip] || '')}</div></button>`).join('')}</div></div>`;
       break;
     }
     case 'exform': {
@@ -1783,8 +1788,8 @@ function sheet() {
       break;
     case 'fsearch': {
       const ml = (MEALS.find(m => m[0] === s.meal) || MEALS[0])[1];
-      b = `<h3>Add to ${ml}</h3><input id="food-q" type="search" placeholder="Search foods — e.g. chicken breast, Chobani" autocomplete="off" value="${esc(s.q || '')}">
-        <button class="btn sm ghost" style="margin:10px 0" data-a="nCustom">＋ Create a food</button><div id="food-res">${foodResults(s)}</div>`;
+      b = `<h3>Add to ${ml}</h3><input id="food-q" type="search" placeholder="Search foods — e.g. chicken breast, Chobani" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search" value="${esc(s.q || '')}">
+        <button class="btn sm ghost" style="margin:10px 0" data-a="nCustom">＋ Create a food</button><div id="food-res" class="sbody" data-keep="sbody-fsearch">${foodResults(s)}</div>`;
       break;
     }
     case 'fadd': {
@@ -1834,7 +1839,8 @@ function sheet() {
   // must not move the buttons under the user's finger.
   const anim = ui.sheetAnim ? 'anim' : '';
   ui.sheetAnim = false;
-  return `<div class="ov ${anim}"><div class="bd" data-a="closeSheet"></div><div class="sheet" data-keep="sheet-${s.type}"><div class="grab"></div>${b}</div></div>`;
+  const full = s.type === 'fsearch' || s.type === 'picker';
+  return `<div class="ov ${anim}"><div class="bd" data-a="closeSheet"></div><div class="sheet ${full ? 'full' : ''}" data-keep="sheet-${s.type}"><div class="grab"></div>${b}</div></div>`;
 }
 
 // ---------- workout logic ----------
@@ -2381,7 +2387,12 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   const t = e.target;
   // Typing in food search / amount updates in place so the keyboard stays up.
-  if (t.id === 'food-q' && ui.sheet && ui.sheet.type === 'fsearch') { ui.sheet.q = t.value; refreshFoodResults(); scheduleOff(); return; }
+  if (t.id === 'food-q' && ui.sheet && ui.sheet.type === 'fsearch') {
+    ui.sheet.q = t.value; refreshFoodResults(); scheduleOff();
+    const res = document.getElementById('food-res');
+    if (res) res.scrollTop = 0;     // new search → start from the top of the results
+    return;
+  }
   if (t.id === 'f-qty' && ui.sheet && ui.sheet.type === 'fadd') {
     const s = ui.sheet, el = document.getElementById('f-prev');
     s.qty = t.value;
@@ -2416,6 +2427,19 @@ document.addEventListener('pointerdown', () => {
     navigator.storage.persist().then(p => { ui.persisted = p; }).catch(() => {});
   }
 }, { passive: true });
+
+// Track the visible area (it shrinks when the iPhone keyboard opens) so overlays fit above the keyboard.
+function syncViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  document.documentElement.style.setProperty('--vvh', vv.height + 'px');
+  document.documentElement.style.setProperty('--vvt', vv.offsetTop + 'px');
+}
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', syncViewport);
+  visualViewport.addEventListener('scroll', syncViewport);
+  syncViewport();
+}
 
 // Chart crosshair + tooltip: snaps to the nearest week; works with mouse and touch.
 document.addEventListener('pointermove', e => { const svg = e.target.closest && e.target.closest('svg[data-chart]'); if (svg) { hideTips(svg); showTip(svg, e.clientX); } });
