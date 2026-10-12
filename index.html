@@ -91,8 +91,9 @@ h1{font-size:30px;font-weight:700;margin:4px 0;letter-spacing:-.4px}
 .pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 11px;font-size:13px;font-weight:700;background:var(--s2);color:var(--am);font-variant-numeric:tabular-nums}
 .pill.done{background:var(--ok);color:#04342C;animation:pulse 1s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.55}}
-/* Overlays track the *visible* viewport, so with the iPhone keyboard up a panel sits above it instead of behind it. */
-.ov{position:fixed;left:0;right:0;top:var(--vvt,0px);height:var(--vvh,100dvh);z-index:50}
+.ov{position:fixed;inset:0;z-index:50}
+/* Food search is a normal page (not a floating panel): iOS handles the keyboard reliably for in-page inputs. */
+.search-head{position:sticky;top:0;z-index:5;background:var(--bg);margin:0 -16px;padding:calc(var(--st) + 10px) 16px 10px}
 /* Search panels: fixed height, header stays put, only the results scroll — typing never moves the search box. */
 .sheet.full{top:calc(var(--st) + 6px);max-height:none;overflow:hidden;display:flex;flex-direction:column;padding-bottom:0}
 .sheet.full .sbody{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;margin:0 -16px;padding:0 16px calc(var(--sb) + 18px)}
@@ -182,6 +183,7 @@ h1{font-size:30px;font-weight:700;margin:4px 0;letter-spacing:-.4px}
 
 // ---------- constants & helpers ----------
 const KEY = 'forge.v1';
+const APP_VERSION = '1.4 · search page';   // shown in Settings so you can confirm the phone has the latest upload
 const EQ = { barbell: 'Barbell', dbSide: 'Dumbbell (per side)', dbTotal: 'Dumbbell (total)', machine: 'Machine', cable: 'Cable', bw: 'Bodyweight' };
 const PLATES = [45, 35, 25, 10, 5, 2.5];
 const uid = () => (crypto.randomUUID ? crypto.randomUUID().slice(0, 13) : Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
@@ -494,7 +496,8 @@ function render() {
   // The Training | Nutrition switch sits on top of every main (non-pushed) screen.
   const body = view(), root = ui.stack.length === 0 && ui.view.name !== 'workout';
   app.className = root ? 'has-mode' : '';
-  app.innerHTML = (root ? modeBar() : '') + body + (ui.view.name === 'workout' ? '' : tabbar()) + sheet();
+  const noTabs = ui.view.name === 'workout' || ui.view.name === 'fsearch';
+  app.innerHTML = (root ? modeBar() : '') + body + (noTabs ? '' : tabbar()) + sheet();
   app.querySelectorAll('[data-keep]').forEach(el => { const k = el.dataset.keep; if (k in keep) el.scrollTop = keep[k]; });
   if (ui.resetScroll) { window.scrollTo(0, 0); ui.resetScroll = false; } else window.scrollTo(0, sy);
   if (ui.scrollSel) { ui.scrollSel = false; const el = app.querySelector('.setrow.sel'); if (el) el.scrollIntoView({ block: 'nearest' }); }
@@ -513,6 +516,7 @@ function view() {
     case 'nfoods': return vNFoods();
     case 'ntrends': return vNTrends();
     case 'ntargets': return vNTargets();
+    case 'fsearch': return vFoodSearch();
     case 'history': return vHistory();
     case 'session': return vSession();
     case 'settings': return vSettings();
@@ -1450,7 +1454,18 @@ function foodResults(s) {
 }
 function refreshFoodResults() {
   const el = document.getElementById('food-res');
-  if (el && ui.sheet && ui.sheet.type === 'fsearch') el.innerHTML = foodResults(ui.sheet);
+  if (el && ui.view.name === 'fsearch') el.innerHTML = foodResults(ui.view);
+}
+// Food search is a full page in the normal document flow — no floating panel —
+// with the search box in a sticky header. Typing only swaps the results' HTML.
+function vFoodSearch() {
+  const s = ui.view, ml = (MEALS.find(m => m[0] === s.meal) || MEALS[0])[1];
+  return `<div class="scr" style="padding-top:0;padding-bottom:calc(var(--sb) + 40px)"><div class="search-head">
+      <div class="row" style="margin-bottom:10px"><button class="navbtn" data-a="back" aria-label="Back">‹</button>
+        <div class="grow" style="font-weight:700;font-size:18px;text-align:center">Add to ${ml}</div><span style="width:40px"></span></div>
+      <input id="food-q" type="search" placeholder="Search foods — e.g. chicken breast, Chobani" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" value="${esc(s.q || '')}">
+      <button class="btn sm ghost" style="margin-top:10px" data-a="nCustom">＋ Create a food</button></div>
+    <div id="food-res" style="margin-top:6px">${foodResults(s)}</div></div>`;
 }
 function offToFood(p) {
   const n = p.nutriments || {};
@@ -1471,7 +1486,7 @@ let offTimer = null, offCtl = null;
 const offMemo = new Map();
 function scheduleOff() {
   clearTimeout(offTimer);
-  const s = ui.sheet, q = (s.q || '').trim().toLowerCase();
+  const s = ui.view, q = (s.q || '').trim().toLowerCase();
   if (q.length < 3) return;
   if (offMemo.has(q)) { s.off = offMemo.get(q); s.offState = 'done'; s.offQ = q; refreshFoodResults(); return; }
   offTimer = setTimeout(() => offSearch(q), 700);
@@ -1484,8 +1499,8 @@ async function offFetch(q, signal) {
   return (await res.json()).products || [];
 }
 async function offSearch(q) {
-  const s = ui.sheet;
-  if (!s || s.type !== 'fsearch') return;
+  const s = ui.view;
+  if (!s || s.name !== 'fsearch') return;
   if (offCtl) offCtl.abort();
   const ctl = offCtl = new AbortController(), timer = setTimeout(() => ctl.abort(), 12000);
   try {
@@ -1496,7 +1511,7 @@ async function offSearch(q) {
       await new Promise(r => setTimeout(r, 1500));
       products = await offFetch(q, ctl.signal);
     }
-    if (ui.sheet !== s) return;
+    if (ui.view !== s) return;
     s.off = products.map(offToFood).filter(Boolean);
     s.off.forEach(f => { ui.offCache[f.id] = f; });
     offMemo.set(q, s.off);
@@ -1506,7 +1521,7 @@ async function offSearch(q) {
     s.offState = 'error';
   } finally { clearTimeout(timer); }
   s.offQ = q;
-  if (ui.sheet === s) refreshFoodResults();
+  if (ui.view === s) refreshFoodResults();
 }
 
 function vNFoods() {
@@ -1644,7 +1659,7 @@ function vSettings() {
       ${ui.persisted ? '<br>✓ Storage is marked persistent.' : ''}</div>
     <div class="cap" style="margin:22px 4px 8px">Danger zone</div>
     <div class="card"><button class="btn danger" data-a="eraseAll">Erase all data</button></div>
-    <div class="faint" style="text-align:center;font-size:12px;margin-top:20px">Forge · web edition</div></div>`;
+    <div class="faint" style="text-align:center;font-size:12px;margin-top:20px">Forge · web edition · version ${APP_VERSION}</div></div>`;
 }
 
 // ---------- sheets ----------
@@ -1786,12 +1801,6 @@ function sheet() {
         ${s.all ? '<button class="btn ghost" data-a="dayPicked" data-id="all">Add to every day</button>' : ''}
         <button class="btn" style="background:none;color:var(--t2)" data-a="closeSheet">Cancel</button></div>`;
       break;
-    case 'fsearch': {
-      const ml = (MEALS.find(m => m[0] === s.meal) || MEALS[0])[1];
-      b = `<h3>Add to ${ml}</h3><input id="food-q" type="search" placeholder="Search foods — e.g. chicken breast, Chobani" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search" value="${esc(s.q || '')}">
-        <button class="btn sm ghost" style="margin:10px 0" data-a="nCustom">＋ Create a food</button><div id="food-res" class="sbody" data-keep="sbody-fsearch">${foodResults(s)}</div>`;
-      break;
-    }
     case 'fadd': {
       const f = s.food, m = f.measures[s.mi], v = scale(f, parseFloat(s.qty) || 0, m);
       b = `<h3 style="margin-bottom:2px">${esc(f.name)}</h3>
@@ -1839,7 +1848,7 @@ function sheet() {
   // must not move the buttons under the user's finger.
   const anim = ui.sheetAnim ? 'anim' : '';
   ui.sheetAnim = false;
-  const full = s.type === 'fsearch' || s.type === 'picker';
+  const full = s.type === 'picker';
   return `<div class="ov ${anim}"><div class="bd" data-a="closeSheet"></div><div class="sheet ${full ? 'full' : ''}" data-keep="sheet-${s.type}"><div class="grab"></div>${b}</div></div>`;
 }
 
@@ -2272,9 +2281,9 @@ const A = {
   nDayToday: () => { ui.nday = null; render(); },
   nWater: d => { const day = nDay(ui.nday || todayKey()); day.water = Math.max(0, day.water + +d.v); save(); render(); },
   nAdd: d => {
-    openSheet({ type: 'fsearch', meal: d.m, day: ui.nday || todayKey(), q: '', off: [], offState: 'idle', offQ: '' });
+    go({ name: 'fsearch', meal: d.m, day: ui.nday || todayKey(), q: '', off: [], offState: 'idle', offQ: '' });
     const el = document.getElementById('food-q');
-    if (el) el.focus();
+    if (el) el.focus();   // same tap → keyboard opens on iPhone
   },
   nCopy: d => {
     const k = ui.nday || todayKey(), y = peekDay(shiftKey(k, -1)).entries.filter(e => e.meal === d.m), day = nDay(k);
@@ -2296,7 +2305,7 @@ const A = {
   nRange: d => { ui.nRange = d.v; render(); },
   // nutrition: picking and adding food
   fPick: d => {
-    const s = ui.sheet, f = foodById(d.id) || ui.offCache[d.id];
+    const s = ui.view, f = foodById(d.id) || ui.offCache[d.id];
     if (f) openSheet({ type: 'fadd', food: f, meal: s.meal, day: s.day, mi: 0, qty: f.measures[0].l === 'g' ? '100' : '1' });
   },
   fQty: d => {
@@ -2320,12 +2329,13 @@ const A = {
     if (i >= 0) day.entries[i] = e; else day.entries.push(e);
     if (f.src === 'off' && !N().foods[f.id]) N().foods[f.id] = f;   // keep online foods for offline use
     N().recent = [f.id, ...N().recent.filter(x => x !== f.id)].slice(0, 30);
-    ui.sheet = null; save(); render();
+    ui.sheet = null; save();
+    if (ui.view.name === 'fsearch') back(); else render();   // added from search → back to the day
     if (i < 0) toast(`Added ${r0(v.kcal)} kcal`);
   },
   fDel: () => { const s = ui.sheet, day = nDay(s.day); day.entries = day.entries.filter(x => x.id !== s.entryId); ui.sheet = null; save(); render(); },
   // nutrition: custom & saved foods
-  nCustom: () => { const s = ui.sheet; openSheet({ type: 'fcustom', f: { name: s.q || '', brand: '', serving: '1 serving', grams: '', kcal: '', p: '', c: '', fat: '' }, meal: s.meal, day: s.day }); },
+  nCustom: () => { const s = ui.view; openSheet({ type: 'fcustom', f: { name: s.q || '', brand: '', serving: '1 serving', grams: '', kcal: '', p: '', c: '', fat: '' }, meal: s.meal, day: s.day }); },
   nCustomNew: () => openSheet({ type: 'fcustom', f: { name: '', brand: '', serving: '1 serving', grams: '', kcal: '', p: '', c: '', fat: '' } }),
   fCustomSave: () => {
     const s = ui.sheet, F = s.f, name = (F.name || '').trim(), num = x => Math.max(0, parseFloat(x) || 0);
@@ -2387,12 +2397,7 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   const t = e.target;
   // Typing in food search / amount updates in place so the keyboard stays up.
-  if (t.id === 'food-q' && ui.sheet && ui.sheet.type === 'fsearch') {
-    ui.sheet.q = t.value; refreshFoodResults(); scheduleOff();
-    const res = document.getElementById('food-res');
-    if (res) res.scrollTop = 0;     // new search → start from the top of the results
-    return;
-  }
+  if (t.id === 'food-q' && ui.view.name === 'fsearch') { ui.view.q = t.value; refreshFoodResults(); scheduleOff(); return; }
   if (t.id === 'f-qty' && ui.sheet && ui.sheet.type === 'fadd') {
     const s = ui.sheet, el = document.getElementById('f-prev');
     s.qty = t.value;
@@ -2427,19 +2432,6 @@ document.addEventListener('pointerdown', () => {
     navigator.storage.persist().then(p => { ui.persisted = p; }).catch(() => {});
   }
 }, { passive: true });
-
-// Track the visible area (it shrinks when the iPhone keyboard opens) so overlays fit above the keyboard.
-function syncViewport() {
-  const vv = window.visualViewport;
-  if (!vv) return;
-  document.documentElement.style.setProperty('--vvh', vv.height + 'px');
-  document.documentElement.style.setProperty('--vvt', vv.offsetTop + 'px');
-}
-if (window.visualViewport) {
-  visualViewport.addEventListener('resize', syncViewport);
-  visualViewport.addEventListener('scroll', syncViewport);
-  syncViewport();
-}
 
 // Chart crosshair + tooltip: snaps to the nearest week; works with mouse and touch.
 document.addEventListener('pointermove', e => { const svg = e.target.closest && e.target.closest('svg[data-chart]'); if (svg) { hideTips(svg); showTip(svg, e.clientX); } });
