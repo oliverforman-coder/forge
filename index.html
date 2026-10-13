@@ -124,6 +124,17 @@ h1{font-size:30px;font-weight:700;margin:4px 0;letter-spacing:-.4px}
 .mv button{width:32px;height:24px;border-radius:7px;background:var(--s2);font-size:11px;color:var(--t2);text-align:center}
 .x{width:32px;height:32px;border-radius:16px;background:rgba(226,75,74,.15);color:#FF6B6B;font-size:15px;flex:none;text-align:center}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--sb) + 96px);background:#2B2B30;color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;z-index:80;animation:fade .2s;white-space:nowrap}
+/* Barcode scanner: its own layer outside the app, so a re-render never touches the live camera. */
+.scan{position:fixed;inset:0;z-index:60;background:#000;overflow:hidden}
+.scan video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.scan .frame{position:absolute;left:8%;right:8%;top:38%;height:22%;border:3px solid var(--ac);border-radius:16px;box-shadow:0 0 0 100vmax rgba(0,0,0,.45)}
+.scan .frame::after{content:'';position:absolute;left:6%;right:6%;top:50%;height:2px;background:rgba(255,86,48,.75)}
+.scan .top{position:relative;display:flex;align-items:center;padding:calc(var(--st) + 12px) 16px 0}
+.scan .msg{position:absolute;left:16px;right:16px;bottom:calc(var(--sb) + 28px);text-align:center}
+.spin{width:30px;height:30px;border-radius:50%;border:3px solid var(--s2);border-top-color:var(--ac);animation:rot .8s linear infinite;margin:0 auto}
+@keyframes rot{to{transform:rotate(360deg)}}
+.tools3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}
+.ai-note{background:rgba(255,176,32,.12);color:var(--am);border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:14px}
 .jump.cur{border:1px solid var(--ac)}
 .seg{display:flex;background:var(--s1);border-radius:12px;padding:3px;margin:10px 0 12px}
 .seg button{flex:1;padding:9px;border-radius:10px;font-size:14px;font-weight:600;color:var(--t2);text-align:center}
@@ -177,13 +188,14 @@ h1{font-size:30px;font-weight:700;margin:4px 0;letter-spacing:-.4px}
 <body>
 <div id="app"></div>
 <input type="file" id="import-file" accept="application/json,.json" hidden>
+<input type="file" id="photo-file" accept="image/*" hidden>
 <script>
 (() => {
 'use strict';
 
 // ---------- constants & helpers ----------
 const KEY = 'forge.v1';
-const APP_VERSION = '1.4 · search page';   // shown in Settings so you can confirm the phone has the latest upload
+const APP_VERSION = '1.5 · scan & photo';   // shown in Settings so you can confirm the phone has the latest upload
 const EQ = { barbell: 'Barbell', dbSide: 'Dumbbell (per side)', dbTotal: 'Dumbbell (total)', machine: 'Machine', cable: 'Cable', bw: 'Bodyweight' };
 const PLATES = [45, 35, 25, 10, 5, 2.5];
 const uid = () => (crypto.randomUUID ? crypto.randomUUID().slice(0, 13) : Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
@@ -1434,6 +1446,9 @@ function foodResults(s) {
     return rec.length ? `<div class="cap" style="margin:4px 4px 8px">Recent</div><div class="list">${rec.map(foodRow).join('')}</div>`
       : `<div class="faint" style="text-align:center;padding:20px 0;font-size:13px">Search ${BUILTIN.length} common foods and the Open Food Facts database.</div>`;
   }
+  // A typed barcode number (8–14 digits) gets a lookup row, for when the camera can't focus.
+  if (/^\d{8,14}$/.test(q)) return `<button class="card row" style="width:100%;padding:13px 12px" data-a="nBarcode" data-code="${q}">${BARCODE_ICON}
+      <div class="grow" style="font-weight:600">Look up barcode ${q}</div><span class="faint">›</span></button>`;
   const words = q.split(/\s+/);
   const local = [...Object.values(N().foods), ...BUILTIN]
     .filter(f => { const hay = `${f.name} ${f.brand || ''}`.toLowerCase(); return words.every(w => hay.includes(w)); })
@@ -1448,7 +1463,7 @@ function foodResults(s) {
   else if (s.offState === 'error') h += note("Couldn't reach the food database — check your connection. You can still use the foods above or create your own.");
   else {
     const online = s.off.filter(f => !seen.has(f.id));
-    h += online.length ? `<div class="list">${online.map(foodRow).join('')}</div>` : note('No online matches. Try different words, or create the food.');
+    h += online.length ? `<div class="list">${online.map(foodRow).join('')}</div>` : note('No online matches. Try different words, scan the barcode, or snap a photo of the label or meal.');
   }
   return h;
 }
@@ -1464,7 +1479,7 @@ function vFoodSearch() {
       <div class="row" style="margin-bottom:10px"><button class="navbtn" data-a="back" aria-label="Back">‹</button>
         <div class="grow" style="font-weight:700;font-size:18px;text-align:center">Add to ${ml}</div><span style="width:40px"></span></div>
       <input id="food-q" type="search" placeholder="Search foods — e.g. chicken breast, Chobani" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" value="${esc(s.q || '')}">
-      <button class="btn sm ghost" style="margin-top:10px" data-a="nCustom">＋ Create a food</button></div>
+      <div class="tools3"><button class="btn sm ghost" data-a="nScan">${BARCODE_ICON} Scan</button><button class="btn sm ghost" data-a="nPhoto">📷 Photo</button><button class="btn sm ghost" data-a="nCustom">＋ Create</button></div></div>
     <div id="food-res" style="margin-top:6px">${foodResults(s)}</div></div>`;
 }
 function offToFood(p) {
@@ -1523,6 +1538,216 @@ async function offSearch(q) {
   s.offQ = q;
   if (ui.view === s) refreshFoodResults();
 }
+
+// ---------- barcode scanning ----------
+// Live camera scan. Safari has no built-in barcode reader, so the ZXing decoder is
+// fetched from a CDN the first time you scan (the lookup needs signal anyway).
+const BARCODE_ICON = '<svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true" style="flex:none"><path d="M1 0v14M3.5 0v14M6 0v14M8.5 0v14M12 0v14M14.5 0v14M17 0v14" stroke="currentColor" stroke-width="1.6"/></svg>';
+const ZXING_URL = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+const scriptLoads = {};
+function loadScript(src) {
+  return scriptLoads[src] = scriptLoads[src] || new Promise((ok, fail) => {
+    const el = document.createElement('script'); el.src = src; el.onload = ok;
+    el.onerror = () => { delete scriptLoads[src]; el.remove(); fail(new Error('load failed')); };
+    document.head.appendChild(el);
+  });
+}
+async function makeDecoder() {
+  const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
+  if ('BarcodeDetector' in window) {   // Chrome/Android have one built in
+    try {
+      const ok = (await BarcodeDetector.getSupportedFormats()).filter(f => formats.includes(f));
+      if (ok.length) { const d = new BarcodeDetector({ formats: ok }); return async cv => { const r = await d.detect(cv); return r.length ? r[0].rawValue : null; }; }
+    } catch (e) {}
+  }
+  await loadScript(ZXING_URL);
+  const Z = window.ZXing, F = Z.BarcodeFormat, hints = new Map(), reader = new Z.MultiFormatReader();
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E]);
+  hints.set(Z.DecodeHintType.TRY_HARDER, true);
+  reader.setHints(hints);
+  return cv => { try { return reader.decodeWithState(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(cv)))).getText(); } catch (e) { return null; } };
+}
+let scan = null;
+function stopScan() {
+  if (!scan) return;
+  clearInterval(scan.timer);
+  if (scan.stream) scan.stream.getTracks().forEach(t => t.stop());
+  scan.ov.remove(); scan = null;
+}
+function scanMsg(html) { const el = scan && scan.ov.querySelector('.msg'); if (el) el.innerHTML = html; }
+function scanFail(msg) {
+  scanMsg(`<div class="card" style="text-align:left"><div style="font-size:14px;margin-bottom:12px">${msg}</div>
+    <div class="list"><button class="btn" data-a="scanType">Type the barcode number instead</button><button class="btn" style="background:none;color:var(--t2)" data-a="scanClose">Close</button></div></div>`);
+}
+async function startScan() {
+  stopScan();
+  const ov = document.createElement('div'); ov.className = 'scan';
+  ov.innerHTML = `<video playsinline muted autoplay></video><div class="frame"></div>
+    <div class="top"><button class="navbtn" data-a="scanClose" aria-label="Close">✕</button><div class="grow" style="text-align:center;font-weight:700">Scan barcode</div><span style="width:40px"></span></div>
+    <div class="msg"><div style="font-size:14px;color:rgba(255,255,255,.8)">Line the barcode up inside the box</div></div>`;
+  document.body.appendChild(ov);
+  const s = scan = { ov, stream: null, timer: null, busy: false };
+  try {
+    s.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+  } catch (e) {
+    if (scan === s) scanFail(e.name === 'NotAllowedError' ? 'Forge isn’t allowed to use the camera. Tap Allow when asked — or turn it on in iPhone Settings → Apps → Safari → Camera.' : 'Couldn’t start the camera.');
+    return;
+  }
+  if (scan !== s) { s.stream.getTracks().forEach(t => t.stop()); return; }
+  const v = ov.querySelector('video');
+  v.srcObject = s.stream;
+  try { await v.play(); } catch (e) {}
+  let decode;
+  try { decode = await makeDecoder(); }
+  catch (e) { if (scan === s) scanFail('Couldn’t load the scanner — check your connection.'); return; }
+  const cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+  s.timer = setInterval(async () => {
+    if (scan !== s || s.busy || !v.videoWidth) return;
+    s.busy = true;
+    try {
+      // Decode only the band around the on-screen box (the video is scaled to cover the screen).
+      const W = ov.clientWidth, H = ov.clientHeight, vw = v.videoWidth, vh = v.videoHeight, k = Math.max(W / vw, H / vh);
+      const ox = (vw * k - W) / 2, oy = (vh * k - H) / 2;
+      const sx = Math.max(0, (W * 0.03 + ox) / k), sy = Math.max(0, (H * 0.32 + oy) / k);
+      const sw = Math.min(vw - sx, W * 0.94 / k), sh = Math.min(vh - sy, H * 0.34 / k), z = Math.min(1, 1000 / sw);
+      cv.width = Math.round(sw * z); cv.height = Math.round(sh * z);
+      cx.drawImage(v, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+      const code = await decode(cv);
+      if (code && scan === s) {
+        clearInterval(s.timer); s.stream.getTracks().forEach(t => t.stop());
+        scanMsg(`<div class="card"><div class="spin"></div><div style="margin-top:10px;font-weight:600">${esc(code)}</div><div class="muted" style="font-size:14px">Looking it up…</div></div>`);
+        lookupBarcode(code);
+      }
+    } finally { s.busy = false; }
+  }, 150);
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopScan(); });
+
+const sameCode = (a, b) => !!a && !!b && String(a).replace(/^0+/, '') === String(b).replace(/^0+/, '');
+// Your saved foods first (instant, works offline), then Open Food Facts.
+async function findBarcode(code) {
+  const mine = Object.values(N().foods).find(f => sameCode(f.code, code));
+  if (mine) return mine;
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 12000);
+  try {
+    const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=code,product_name,product_name_en,generic_name,brands,nutriments,serving_size,serving_quantity`, { signal: ctl.signal });
+    if (!res.ok && res.status !== 404) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    if (j.status !== 1 || !j.product) return null;
+    const p = j.product;
+    p.product_name = p.product_name || p.product_name_en || p.generic_name || '';
+    p.code = p.code || code;
+    const f = offToFood(p);
+    if (f) { ui.offCache[f.id] = f; return f; }
+    return { missing: true, name: p.product_name.trim(), brand: (p.brands || '').split(',')[0].trim() };   // known product, no nutrition info
+  } finally { clearTimeout(timer); }
+}
+async function lookupBarcode(code) {
+  const v = ui.view;
+  let f;
+  try { f = await findBarcode(code); }
+  catch (e) { stopScan(); if (ui.view === v) openSheet({ type: 'bcmiss', code, err: true }); return; }
+  stopScan();
+  if (ui.view !== v || v.name !== 'fsearch') return;
+  if (f && f.n) openSheet({ type: 'fadd', food: f, meal: v.meal, day: v.day, mi: 0, qty: f.measures[0].l === 'g' ? '100' : '1' });
+  else openSheet({ type: 'bcmiss', code, name: f ? f.name : '', brand: f ? f.brand : '' });
+}
+
+// ---------- food photos (Claude) ----------
+// The photo goes straight from the phone to Anthropic's API with the key you saved
+// in Settings. The key lives in its own storage slot, so it never ends up in a backup.
+const AI_KEY = 'forge.aikey';
+const aiKey = () => { try { return localStorage.getItem(AI_KEY) || ''; } catch (e) { return ''; } };
+const AI_HOWTO = `Snap a nutrition label or a meal and Claude (Anthropic’s AI) fills in the numbers. It uses your own API key — about 1–3¢ a photo:<br>
+  1. Sign in at <b style="color:var(--t1)">console.anthropic.com</b> and add a little credit (setting a monthly limit there is a good idea).<br>
+  2. Open <b style="color:var(--t1)">API keys → Create key</b> and copy it.<br>
+  3. Paste it here. It stays on this phone only and is never put in a backup.`;
+const aiKeyField = () => `<div class="field"><div class="cap">API key</div><input id="ai-key" type="password" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="sk-ant-…"></div>`;
+const SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.128.0/+esm';
+let sdkLoad = null;
+const loadSdk = () => sdkLoad = sdkLoad || import(SDK_URL).catch(e => { sdkLoad = null; throw new Error('Couldn’t load the photo reader — check your connection.'); });
+const PHOTO_PROMPT = `You log food for a fitness app from one photo. The person reviews and can edit your numbers before saving, so always give your best estimate instead of declining when unsure.
+
+- Nutrition Facts label visible (alone or on a package): kind "label". Copy one serving exactly as printed: serving description (e.g. "1 bar", "2/3 cup"), grams per serving, calories, protein, total carbohydrate, total fat. Take the product name and brand from the package if visible.
+- Packaged product with no readable label: kind "packaged". Give typical values for one serving of that product.
+- Plate, bowl, or meal: kind "meal". Identify each component and estimate its portion from visual cues (plate size, utensils, hands). List each as a short item like "~150 g grilled chicken breast". Total the nutrition for everything shown as one serving, serving "1 plate" or "1 bowl", and a short name like "Chicken, rice & broccoli".
+- Not food: kind "not_food".
+
+Use "" for unknown text fields and 0 for unknown grams. confidence is high for a clearly read label and lower for estimates. note is one short sentence on anything worth double-checking, or "".`;
+const PHOTO_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['kind', 'name', 'brand', 'serving', 'grams', 'calories', 'protein', 'carbs', 'fat', 'items', 'confidence', 'note'],
+  properties: {
+    kind: { type: 'string', enum: ['label', 'packaged', 'meal', 'not_food'] },
+    name: { type: 'string' }, brand: { type: 'string' }, serving: { type: 'string' }, grams: { type: 'number' },
+    calories: { type: 'number' }, protein: { type: 'number' }, carbs: { type: 'number' }, fat: { type: 'number' },
+    items: { type: 'array', items: { type: 'string' } },
+    confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+    note: { type: 'string' },
+  },
+};
+async function shrinkPhoto(file) {   // ≤1568 px JPEG: plenty for a label, and keeps the upload small
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image(); img.src = url; await img.decode();
+    const k = Math.min(1, 1568 / Math.max(img.naturalWidth, img.naturalHeight)), cv = document.createElement('canvas');
+    cv.width = Math.round(img.naturalWidth * k); cv.height = Math.round(img.naturalHeight * k);
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    return cv.toDataURL('image/jpeg', 0.85).split(',')[1];
+  } catch (e) { throw new Error('Couldn’t open that photo — try another one.'); }
+  finally { URL.revokeObjectURL(url); }
+}
+async function readFoodPhoto(b64, ctx) {
+  const sdk = await loadSdk();
+  const client = new sdk.default({ apiKey: aiKey(), dangerouslyAllowBrowser: true, timeout: 120000, maxRetries: 1 });
+  const hint = [
+    ctx.code && `It has barcode ${ctx.code}, which isn't in the food database, so it's most likely a packaged product — read its label if one is visible.`,
+    ctx.name && `The product is probably "${ctx.name}".`,
+    ctx.q && !/^\d+$/.test(ctx.q) && `They had searched for "${ctx.q}".`,
+  ].filter(Boolean).join(' ');
+  let msg;
+  try {
+    msg = await client.beta.messages.create({
+      model: 'claude-opus-5-5', max_tokens: 16000,
+      betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+      output_config: { effort: 'low', format: { type: 'json_schema', schema: PHOTO_SCHEMA } },
+      system: PHOTO_PROMPT,
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
+        { type: 'text', text: ('Log the food in this photo. ' + hint).trim() },
+      ] }],
+    });
+  } catch (e) {
+    if (e instanceof sdk.AuthenticationError || e instanceof sdk.PermissionDeniedError) throw new Error('Your API key wasn’t accepted. Check it in Settings → Food photos.');
+    if (e instanceof sdk.RateLimitError) throw new Error('Too many photos at once — wait a minute and try again.');
+    if (e instanceof sdk.APIConnectionError) throw new Error('Couldn’t reach Claude — check your connection.');
+    if (e instanceof sdk.BadRequestError && /credit/i.test(e.message)) throw new Error('Your Anthropic account is out of credit — add some at console.anthropic.com.');
+    if (e instanceof sdk.APIError) throw new Error(`Claude couldn’t read it right now (error ${e.status ?? '?'}). Try again in a moment.`);
+    throw e;
+  }
+  if (msg.stop_reason === 'refusal') throw new Error('Claude couldn’t read that photo — try another one.');
+  const t = msg.content.find(b => b.type === 'text');
+  try { return JSON.parse(t.text); } catch (e) { throw new Error('Claude couldn’t read that photo — try another one.'); }
+}
+document.getElementById('photo-file').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const ctx = ui.photoCtx || {}, wait = { type: 'aiwait' };
+  openSheet(wait);
+  try {
+    const r = await readFoodPhoto(await shrinkPhoto(file), ctx);
+    if (ui.sheet !== wait) return;   // cancelled while waiting
+    if (r.kind === 'not_food') { openSheet({ type: 'aierr', msg: 'That doesn’t look like food. Try a photo of the meal or its Nutrition Facts label.' }); return; }
+    const n = x => String(r1(Math.max(0, +x || 0)));
+    openSheet({ type: 'fcustom', meal: ctx.meal, day: ctx.day, code: ctx.code || '',
+      ai: { kind: r.kind, items: r.items || [], note: r.note || '', confidence: r.confidence },
+      f: { name: r.name || ctx.name || '', brand: r.brand || '', serving: r.serving || '1 serving', grams: r.grams > 0 ? String(r0(r.grams)) : '',
+        kcal: String(r0(Math.max(0, +r.calories || 0))), p: n(r.protein), c: n(r.carbs), fat: n(r.fat) } });
+  } catch (err) {
+    if (ui.sheet === wait) openSheet({ type: 'aierr', msg: err.message || 'Something went wrong — try again.' });
+  }
+});
 
 function vNFoods() {
   const mine = Object.values(N().foods).sort((a, b) => a.name.localeCompare(b.name));
@@ -1654,6 +1879,10 @@ function vSettings() {
       <div class="chiprow wrap">${GROUPS.map(g => `<button class="chip sm ${db.profile.priorities.includes(g.k) ? 'on' : ''}" data-a="prioTog" data-v="${g.k}"><i class="key" style="background:${g.color}"></i>${g.name}</button>`).join('')}</div>
       <div class="sub" style="margin:12px 0 8px">Problem areas — the coach adds mobility work for these</div>
       <div class="chiprow wrap">${PROBLEMS.map(([k, l]) => `<button class="chip sm ${db.profile.problems.includes(k) ? 'on' : ''}" data-a="probTog" data-v="${k}">${l}</button>`).join('')}</div></div>
+    <div class="cap" style="margin:22px 4px 8px">Food photos</div>
+    <div class="card">${aiKey() ? `<div class="muted" style="font-size:14px;margin-bottom:12px">✓ Claude API key saved on this phone (ends in <b style="color:var(--t1)">${esc(aiKey().slice(-4))}</b>). Tap 📷 Photo when adding food.</div>
+        <button class="btn" data-a="aiKeyDel">Remove key</button>`
+      : `<div class="muted" style="font-size:14px;margin-bottom:12px">${AI_HOWTO}</div>${aiKeyField()}<button class="btn pri" data-a="aiKeySave">Save key</button>`}</div>
     <div class="cap" style="margin:22px 4px 8px">This device</div>
     <div class="card muted" style="font-size:14px">${standalone ? '✓ Running from your Home Screen.' : 'Running in the browser. Add Forge to your Home Screen (Share → Add to Home Screen) and use that icon from now on.'}
       ${ui.persisted ? '<br>✓ Storage is marked persistent.' : ''}</div>
@@ -1816,7 +2045,10 @@ function sheet() {
     }
     case 'fcustom': {
       const F = s.f, inp = (k, l, ph = '', mode = 'decimal') => `<div class="field"><div class="cap">${l}</div><input data-k="${k}" inputmode="${mode}" value="${esc(F[k])}" placeholder="${ph}"></div>`;
-      b = `<h3>${s.foodId ? 'Edit food' : 'Create a food'}</h3>
+      const ai = s.ai, aiNote = !ai ? '' : `<div class="ai-note">📷 ${ai.kind === 'label' ? 'Read from the nutrition label — check it matches.' : ai.kind === 'packaged' ? 'Typical values for this product — check the label if you have it.' : 'Estimated from your photo — portions are guesses, so adjust if you know better.'}
+          ${ai.items.length ? `<div style="margin-top:6px;color:var(--t2)">${ai.items.map(esc).join(' · ')}</div>` : ''}${ai.note ? `<div style="margin-top:6px">${esc(ai.note)}</div>` : ''}</div>`;
+      b = `<h3>${ai ? 'Check & save' : s.foodId ? 'Edit food' : 'Create a food'}</h3>${aiNote}
+        ${s.code ? `<div class="sub" style="text-align:center;margin:-6px 0 14px">Saved with barcode ${esc(s.code)} — next scan finds it instantly</div>` : ''}
         <div class="field"><div class="cap">Name</div><input data-k="name" value="${esc(F.name)}" placeholder="e.g. Homemade chili" autocapitalize="words"></div>
         <div class="field"><div class="cap">Brand (optional)</div><input data-k="brand" value="${esc(F.brand)}" autocapitalize="words"></div>
         <div class="grid2"><div class="field"><div class="cap">Serving</div><input data-k="serving" value="${esc(F.serving)}" placeholder="1 bowl"></div>${inp('grams', 'Grams per serving', 'optional')}</div>
@@ -1825,6 +2057,27 @@ function sheet() {
         <div class="row" style="gap:8px"><button class="btn" data-a="closeSheet">Cancel</button><button class="btn pri" data-a="fCustomSave">Save</button></div>`;
       break;
     }
+    case 'bcmiss':
+      b = s.err ? `<h3>Couldn’t look it up</h3><div class="muted" style="font-size:14px;margin-bottom:14px">Couldn’t reach the food database for barcode ${esc(s.code)} — check your connection.</div>
+          <div class="list"><button class="btn pri" data-a="nBarcode" data-code="${esc(s.code)}">Try again</button><button class="btn" style="background:none;color:var(--t2)" data-a="closeSheet">Cancel</button></div>`
+        : `<h3>Not in the database yet</h3><div class="muted" style="font-size:14px;margin-bottom:14px">${s.name ? `Open Food Facts knows <b style="color:var(--t1)">${esc(s.name)}</b> (${esc(s.code)}) but has no nutrition info for it.` : `Barcode ${esc(s.code)} isn’t in Open Food Facts.`}
+          Snap the Nutrition Facts label and Forge fills it in. It’s saved with this barcode, so next time the scan finds it instantly.</div>
+          <div class="list"><button class="btn pri" data-a="nPhoto">📷 Photo of the label</button><button class="btn" data-a="nCustomCode">Type it in myself</button>
+          <button class="btn" style="background:none;color:var(--t2)" data-a="closeSheet">Cancel</button></div>`;
+      break;
+    case 'aikey':
+      b = `<h3>Turn on food photos</h3><div class="muted" style="font-size:14px;margin-bottom:14px">${AI_HOWTO}</div>${aiKeyField()}
+        <div class="row" style="gap:8px"><button class="btn" data-a="closeSheet">Cancel</button><button class="btn pri" data-a="aiKeySave">Save & take photo</button></div>`;
+      break;
+    case 'aiwait':
+      b = `<div style="padding:26px 0 8px;text-align:center"><div class="spin"></div><div style="font-weight:600;margin-top:14px">Reading your photo…</div>
+        <div class="muted" style="font-size:13px;margin-top:4px">Usually 5–15 seconds</div></div>
+        <button class="btn" style="background:none;color:var(--t2)" data-a="closeSheet">Cancel</button>`;
+      break;
+    case 'aierr':
+      b = `<h3>Couldn’t read the photo</h3><div class="muted" style="font-size:14px;margin-bottom:14px">${esc(s.msg)}</div>
+        <div class="list"><button class="btn pri" data-a="nPhoto">Try another photo</button><button class="btn" style="background:none;color:var(--t2)" data-a="closeSheet">Cancel</button></div>`;
+      break;
     case 'fmine': {
       const f = N().foods[s.id];
       if (!f) break;
@@ -2226,7 +2479,7 @@ const A = {
   resetRoutine: () => openSheet({ type: 'confirm', title: 'Reset routine?', msg: 'Your days and exercise library go back to the built-in routine. Workout history is kept.', ok: 'Reset routine', danger: true,
     fn: () => { const s = seed(); db.exercises = s.exercises; db.days = s.days; save(); toast('Routine reset'); } }),
   eraseAll: () => openSheet({ type: 'confirm', title: 'Erase all data?', msg: 'Deletes every workout and edit on this phone. Export a backup first if you might want it.', ok: 'Erase everything', danger: true,
-    fn: () => { db = seed(); save(); ui.tab = 'home'; ui.view = { name: 'home' }; ui.stack = []; toast('All data erased'); } }),
+    fn: () => { db = seed(); save(); try { localStorage.removeItem(AI_KEY); } catch (e) {} ui.tab = 'home'; ui.view = { name: 'home' }; ui.stack = []; toast('All data erased'); } }),
   // effort & warm-up during a workout
   effort: d => { const e = curEntry(); e.effort = e.effort === d.v ? null : d.v; save(); render(); },
   warmup: () => openSheet({ type: 'warmup' }),
@@ -2336,6 +2589,34 @@ const A = {
   fDel: () => { const s = ui.sheet, day = nDay(s.day); day.entries = day.entries.filter(x => x.id !== s.entryId); ui.sheet = null; save(); render(); },
   // nutrition: custom & saved foods
   nCustom: () => { const s = ui.view; openSheet({ type: 'fcustom', f: { name: s.q || '', brand: '', serving: '1 serving', grams: '', kcal: '', p: '', c: '', fat: '' }, meal: s.meal, day: s.day }); },
+  nCustomCode: () => { const s = ui.sheet, v = ui.view; openSheet({ type: 'fcustom', code: s.code, f: { name: s.name || '', brand: s.brand || '', serving: '1 serving', grams: '', kcal: '', p: '', c: '', fat: '' }, meal: v.meal, day: v.day }); },
+  // nutrition: barcode & photo
+  nScan: () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('No camera available here'); return; }
+    unlockAudio(); startScan();
+  },
+  scanClose: () => stopScan(),
+  scanType: () => {
+    stopScan();
+    const el = document.getElementById('food-q');
+    if (el) { el.value = ''; ui.view.q = ''; refreshFoodResults(); el.setAttribute('inputmode', 'numeric'); el.focus(); el.addEventListener('blur', () => el.removeAttribute('inputmode'), { once: true }); }
+  },
+  nBarcode: d => { toast('Looking up barcode…'); lookupBarcode(d.code); },
+  nPhoto: () => {
+    const v = ui.view, s = ui.sheet;
+    // From "Try another photo" keep the barcode/name context of the first try.
+    if (!(s && s.type === 'aierr' && ui.photoCtx)) ui.photoCtx = { meal: v.meal, day: v.day, q: v.q || '', code: s && s.type === 'bcmiss' ? s.code : '', name: s && s.type === 'bcmiss' ? s.name : '' };
+    if (!aiKey()) { openSheet({ type: 'aikey' }); return; }
+    document.getElementById('photo-file').click();   // must stay synchronous: iOS only opens the picker from a tap
+  },
+  aiKeySave: (d, el) => {
+    const inp = el.closest('.sheet, .card').querySelector('#ai-key'), k = (inp ? inp.value : '').trim();
+    if (!/^sk-ant-\S{20,}$/.test(k)) { toast('That doesn’t look like an API key (sk-ant-…)'); return; }
+    try { localStorage.setItem(AI_KEY, k); } catch (e) { toast('Couldn’t save the key'); return; }
+    if (ui.sheet && ui.sheet.type === 'aikey') { ui.sheet = null; render(); document.getElementById('photo-file').click(); }
+    else { render(); toast('Key saved'); }
+  },
+  aiKeyDel: () => { try { localStorage.removeItem(AI_KEY); } catch (e) {} render(); toast('Key removed'); },
   nCustomNew: () => openSheet({ type: 'fcustom', f: { name: '', brand: '', serving: '1 serving', grams: '', kcal: '', p: '', c: '', fat: '' } }),
   fCustomSave: () => {
     const s = ui.sheet, F = s.f, name = (F.name || '').trim(), num = x => Math.max(0, parseFloat(x) || 0);
@@ -2343,10 +2624,10 @@ const A = {
     // "1 bar" is stored as the unit "bar" so the log reads "2 bar", not "2 1 bar".
     const kcal = num(F.kcal), p = num(F.p), c = num(F.c), fat = num(F.fat), grams = num(F.grams), serving = (F.serving || '').trim().replace(/^(1|one|a)\s+/i, '') || 'serving';
     if (!kcal && !p && !c && !fat) { toast('Enter the nutrition per serving'); return; }
-    const k = grams > 0 ? 100 / grams : 1, id = s.foodId || 'c:' + uid();
+    const k = grams > 0 ? 100 / grams : 1, id = s.foodId || 'c:' + uid(), code = s.code || (s.foodId && N().foods[s.foodId] && N().foods[s.foodId].code);
     const food = { id, name, brand: (F.brand || '').trim(), src: 'custom', n: { kcal: kcal * k, p: p * k, c: c * k, f: fat * k },
       measures: grams > 0 ? [{ l: serving, g: grams }, { l: 'g', g: 1 }, { l: 'oz', g: 28.35 }] : [{ l: serving, g: 100 }],
-      serv: { serving, grams: grams || null, kcal, p, c, fat } };
+      serv: { serving, grams: grams || null, kcal, p, c, fat }, ...(code ? { code } : {}) };
     N().foods[id] = food; save();
     if (s.meal) openSheet({ type: 'fadd', food, meal: s.meal, day: s.day, mi: 0, qty: '1' });
     else { ui.sheet = null; render(); toast('Food saved'); }
