@@ -56,6 +56,7 @@ h1{font-size:30px;font-weight:700;margin:4px 0;letter-spacing:-.4px}
 .hero h2{margin:4px 0 12px;font-size:21px}
 .hero .btn{background:var(--bg);color:var(--t1);justify-content:space-between}
 .hero .links{display:flex;justify-content:space-between;margin-top:10px;font-size:13px;font-weight:700}
+.card .links{display:flex;justify-content:space-between;gap:12px;font-size:13px;font-weight:700;color:var(--ac2)}
 .stats2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .stats3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .metric .v{font-size:24px;font-weight:700;margin-top:3px}
@@ -195,7 +196,7 @@ h1{font-size:30px;font-weight:700;margin:4px 0;letter-spacing:-.4px}
 
 // ---------- constants & helpers ----------
 const KEY = 'forge.v1';
-const APP_VERSION = '2.1 · routine folders';   // shown in Settings so you can confirm the phone has the latest upload
+const APP_VERSION = '2.2 · weekly schedule';   // shown in Settings so you can confirm the phone has the latest upload
 const EQ = { barbell: 'Barbell', dbSide: 'Dumbbell (per side)', dbTotal: 'Dumbbell (total)', machine: 'Machine', cable: 'Cable', bw: 'Bodyweight' };
 const PLATES = [45, 35, 25, 10, 5, 2.5];
 const uid = () => (crypto.randomUUID ? crypto.randomUUID().slice(0, 13) : Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
@@ -478,7 +479,7 @@ const I = {
 // so a new routine picks up your history, weights and setup notes.
 // Day: [name, subtitle, warm-up drill ids, items]; item: [exercise, muscle, equipment, sets, min reps, max reps, rest s, setup]
 const ROUTINE_TEMPLATES = [
-  { id: 'split5', name: '5-day split', blurb: 'Push · Pull · Legs A · Push/Pull · Legs B — about 125 sets a week', days: [
+  { id: 'split5', name: '5-day split', blurb: 'Push · Pull · Legs A · Push/Pull · Legs B — about 125 sets a week', sched: [0, 1, 2, null, 3, 4, null], days: [
     ["Day 1 — Push", "Chest / Shoulders / Triceps", ["pullapart", "chin"], [
       ["Incline Dumbbell Press", "Chest", "dbSide", 3, 6, 10, 150, "Incline 45°"],
       ["Lateral Raise", "Shoulders", "dbSide", 4, 12, 15, 75, "DB or cable · slow"],
@@ -529,7 +530,7 @@ const ROUTINE_TEMPLATES = [
       ["Adductor", "Adductors", "machine", 2, 10, 12, 75, ""],
       ["Standing Calf Raise", "Calves", "machine", 4, 12, 15, 75, ""],
       ["Weighted Abs / Sit-Ups", "Core", "bw", 3, 15, 20, 60, ""]]]] },
-  { id: 'plf4', name: '4-day Push · Legs · Pull · Full Body', blurb: 'One extra rest day, about 100 sets a week — e.g. Mon · Tue · Thu · Sat', days: [
+  { id: 'plf4', name: '4-day Push · Legs · Pull · Full Body', blurb: 'One extra rest day, about 100 sets a week — e.g. Mon · Tue · Thu · Sat', sched: [0, 1, null, 2, null, 3, null], days: [
     ["Day 1 — Push", "Chest / Shoulders / Triceps", ["pullapart", "chin"], [
       ["Incline Dumbbell Press", "Chest", "dbSide", 4, 6, 10, 150, "Incline 45°"],
       ["Lateral Raise", "Shoulders", "dbSide", 4, 12, 15, 75, "DB or cable · slow"],
@@ -584,11 +585,22 @@ function buildDays(tpl, exercises) {
     items: items.map(it => ({ id: uid(), exId: exId(it), sets: it[3], repMin: it[4], repMax: it[5], rest: null, start: null })) }));
 }
 const tplById = id => ROUTINE_TEMPLATES.find(t => t.id === id);
+// Weekly schedule: 7 entries, Monday first, each a workout (day) id or null for rest. A routine without one rotates in order.
+const DOW = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const dowIdx = (t = new Date()) => (t.getDay() + 6) % 7;
+const tplSched = (t, days) => t && t.sched ? t.sched.map(i => i == null || !days[i] ? null : days[i].id) : null;
+// A sensible starting week for n workouts; you then change any day.
+const SPREAD = { 1: [0], 2: [0, 3], 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] };
+function spreadSched(days) {
+  const sch = Array(7).fill(null), n = Math.min(days.length, 7);
+  (SPREAD[n] || []).forEach((dow, i) => { sch[dow] = days[i].id; });
+  return sch;
+}
 
 // A fresh install starts with the 5-day template (or the 4-day / empty, picked on the welcome screen).
 function seed() {
   const exercises = {}, days = buildDays(ROUTINE_TEMPLATES[0], exercises);
-  return { v: 1, exercises, days, routineId: uid(), routineName: ROUTINE_TEMPLATES[0].name, routines: [], sessions: [], active: null, lastBackup: null, hideInstall: false, profile: defaultProfile(), coachSeen: null, coachApplied: [], mode: 'train', nutri: defaultNutri() };
+  return { v: 1, exercises, days, routineId: uid(), routineName: ROUTINE_TEMPLATES[0].name, routineTpl: ROUTINE_TEMPLATES[0].id, routineSched: tplSched(ROUTINE_TEMPLATES[0], days), routines: [], sessions: [], active: null, lastBackup: null, hideInstall: false, profile: defaultProfile(), coachSeen: null, coachApplied: [], mode: 'train', nutri: defaultNutri() };
 }
 
 // ---------- state ----------
@@ -619,6 +631,10 @@ function migrate(d) {
   if (!Array.isArray(d.routines)) d.routines = [];
   if (!d.routineId) d.routineId = uid();
   if (!d.routineName) d.routineName = d.days.length ? `${d.days.length}-day routine` : 'My routine';
+  // Routines added from a template before schedules existed get that template's week (only once — null means "turned off").
+  const tplWeek = (tpl, days) => { const t = tplById(tpl); return t && t.days.length === days.length ? tplSched(t, days) : null; };
+  if (d.routineSched === undefined) d.routineSched = tplWeek(d.routineTpl, d.days);
+  d.routines.forEach(r => { if (r.sched === undefined) r.sched = tplWeek(r.tpl, r.days); });
   d.sessions.sort((a, b) => a.date < b.date ? -1 : 1);
   d.v = 1;
   return d;
@@ -640,7 +656,7 @@ function save() {
 
 // Routines: db.days is the CURRENT routine (the one Home suggests from); the others live in db.routines.
 // Every routine's workouts can be viewed and edited; starting a workout makes its routine current.
-const curRoutine = () => ({ id: db.routineId, name: db.routineName, tpl: db.routineTpl || null, days: db.days, cur: true });
+const curRoutine = () => ({ id: db.routineId, name: db.routineName, tpl: db.routineTpl || null, sched: db.routineSched || null, days: db.days, cur: true });
 const allRoutines = () => [curRoutine(), ...db.routines];
 const routineById = id => allRoutines().find(r => r.id === id);
 const routineOfDay = dayId => allRoutines().find(r => r.days.some(d => d.id === dayId));
@@ -650,9 +666,12 @@ function makeCurrent(id) {
   const i = db.routines.findIndex(r => r.id === id);
   if (i < 0) return;
   const r = db.routines.splice(i, 1)[0];
-  db.routines.unshift({ id: db.routineId, name: db.routineName, tpl: db.routineTpl || null, days: db.days });
-  db.routineId = r.id; db.routineName = r.name; db.routineTpl = r.tpl || null; db.days = r.days;
+  db.routines.unshift({ id: db.routineId, name: db.routineName, tpl: db.routineTpl || null, sched: db.routineSched || null, days: db.days });
+  db.routineId = r.id; db.routineName = r.name; db.routineTpl = r.tpl || null; db.routineSched = r.sched || null; db.days = r.days;
 }
+function setRoutineSched(id, sched) { if (id === db.routineId) db.routineSched = sched; else { const r = db.routines.find(x => x.id === id); if (r) r.sched = sched; } }
+// The schedule with any deleted workouts read as rest.
+const schedOf = r => r && r.sched ? r.sched.map(id => id && r.days.some(d => d.id === id) ? id : null) : null;
 const exOf = id => db.exercises[id];
 const curEntry = () => db.active ? db.active.entries[db.active.idx] : null;
 const findSet = id => { const e = curEntry(); return e ? e.sets.find(s => s.id === id) : null; };
@@ -664,6 +683,27 @@ function lastSets(exId, dayId) {
   return h.length ? h[0].sets : [];
 }
 
+// What Home suggests. With a weekly schedule: today's workout, a rest day, or "done", plus an
+// offer to catch up on a workout missed earlier this week. Without one: the next workout in order.
+function homePlan() {
+  const sch = schedOf(curRoutine());
+  if (!sch || !sch.some(Boolean) || !db.days.length) return { kind: 'rotate', day: todayDay() };
+  const now = new Date(), t = dowIdx(now), wk = startOfWeek(now.getTime());
+  const next = from => { for (let k = from; k < from + 7; k++) { const id = sch[k % 7]; if (id) return { day: getDay(id), dow: k % 7 }; } return null; };
+  const doneToday = db.sessions.some(s => dayKey(new Date(s.date)) === dayKey(now));
+  const doneWk = {}, need = {};
+  db.sessions.forEach(s => { if (new Date(s.date).getTime() >= wk) doneWk[s.dayId] = (doneWk[s.dayId] || 0) + 1; });
+  // Only once you've trained from this routine this week — so switching routines mid-week doesn't flag "missed" days.
+  const onIt = db.sessions.some(s => new Date(s.date).getTime() >= wk && db.days.some(d => d.id === s.dayId));
+  let missed = null;   // the latest scheduled workout this week (before today) that's more often planned than done
+  for (let i = 0; i < (onIt ? t : 0); i++) { const id = sch[i]; if (!id) continue; need[id] = (need[id] || 0) + 1; if (need[id] > (doneWk[id] || 0)) missed = { day: getDay(id), dow: i }; }
+  const today = sch[t] ? getDay(sch[t]) : null;
+  if (missed && today && missed.day.id === today.id) missed = null;
+  if (doneToday) return { kind: 'done', dow: t, next: next(t + 1) };
+  if (today) return { kind: 'today', dow: t, day: today, missed };
+  return { kind: 'rest', dow: t, next: next(t + 1), missed };
+}
+const whenTxt = (n, t) => n.dow === (t + 1) % 7 ? 'Tomorrow' : DOW[n.dow];
 function todayDay() {
   if (!db.days.length) return null;
   const last = db.sessions[db.sessions.length - 1];
@@ -763,7 +803,7 @@ function tabbar() {
 
 // ---------- screens ----------
 function vHome() {
-  const d = todayDay(), a = db.active, now = new Date();
+  const P = homePlan(), d = P.day, a = db.active, now = new Date();
   let h = `<div class="scr"><div class="row" style="align-items:flex-start"><div class="grow">
     <div class="sub">${esc(now.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }))}</div>
     <h1>Let's go${db.profile.name ? `, ${esc(db.profile.name)}` : ''}</h1></div>
@@ -779,10 +819,22 @@ function vHome() {
     h += `<div class="hero"><div class="cap">In progress · ${esc(a.dayName)}</div>
       <h2>Exercise ${a.idx + 1} of ${a.entries.length} · ${done} set${done === 1 ? '' : 's'} logged</h2>
       <button class="btn" data-a="resume"><span>▶&nbsp; Resume workout</span><span>→</span></button></div>`;
+  } else if (P.kind === 'rest' || P.kind === 'done') {
+    const n = P.next;
+    h += `<div class="card" style="padding:18px 16px"><div class="cap">${DOW[P.dow]} · ${P.kind === 'rest' ? 'Rest day' : 'Done ✓'}</div>
+      <div style="font-size:22px;font-weight:700;margin:4px 0 4px">${P.kind === 'rest' ? 'Recover today 💤' : 'Nice work — you trained today'}</div>
+      ${n ? `<div class="muted" style="font-size:14px;margin-bottom:12px">Next up: <b style="color:var(--t1)">${whenTxt(n, P.dow)} · ${esc(n.day.name)}</b></div>` : ''}
+      ${P.kind === 'rest' && n ? `<button class="btn sm" data-a="start" data-id="${n.day.id}">▶&nbsp; Train anyway — ${esc(n.day.name)}</button>` : ''}
+      <div class="links" style="margin-top:10px"><button data-a="openRoutine" data-id="${db.routineId}">Pick another workout</button>${P.kind === 'rest' ? '<button data-a="tab" data-t="coach">Mobility drills</button>' : n ? `<button data-a="openDay" data-id="${n.day.id}">View ${esc(whenTxt(n, P.dow).toLowerCase() === 'tomorrow' ? "tomorrow's" : DOW[n.dow] + "'s")} workout</button>` : ''}</div></div>`;
   } else if (d) {
-    h += `<div class="hero"><div class="cap">Today · ${esc(d.name)}</div><h2>${esc(d.subtitle || d.name)}</h2>
+    h += `<div class="hero"><div class="cap">${P.kind === 'today' ? `${DOW[P.dow]} · ${esc(d.name)}` : `Next up · ${esc(d.name)}`}</div><h2>${esc(d.subtitle || d.name)}</h2>
       <button class="btn" data-a="start" data-id="${d.id}"><span>▶&nbsp; Start workout</span><span>→</span></button>
-      <div class="links"><button data-a="openDay" data-id="${d.id}">View exercises</button><button data-a="tab" data-t="workouts">Pick another day</button></div></div>`;
+      <div class="links"><button data-a="openDay" data-id="${d.id}">View exercises</button><button data-a="openRoutine" data-id="${db.routineId}">Pick another workout</button></div></div>`;
+  }
+  if (!a && P.missed) {
+    h += `<div class="card row" style="width:100%"><div class="grow"><div style="font-weight:600">⏪ You missed ${esc(P.missed.day.name)} on ${DOW[P.missed.dow]}</div>
+      <div class="sub" style="font-size:13px">Catch up ${P.kind === 'rest' ? 'today instead of resting' : 'today instead'}?</div></div>
+      <button class="btn sm" style="width:auto;padding:8px 14px" data-a="start" data-id="${P.missed.day.id}">Do it</button></div>`;
   }
   const firstT = db.sessions.length ? new Date(db.sessions[0].date).getTime() : null;
   if (firstT && Date.now() - firstT >= 27 * 864e5 && (!db.coachSeen || Date.now() - new Date(db.coachSeen) > 28 * 864e5)) {
@@ -821,11 +873,27 @@ function vWorkouts() {
     <div class="cap" style="margin:0 4px 8px">Your routines</div>
     <div class="list">${mine.map(r => `<button class="card row" style="width:100%;${r.cur ? 'outline:2px solid var(--ac)' : ''}" data-a="openRoutine" data-id="${r.id}"><div class="grow" style="min-width:0">
       <div class="row" style="gap:8px"><div class="ell" style="font-weight:700;font-size:17px">${esc(r.name)}</div>${r.cur ? '<span class="amber" style="font-size:11px;font-weight:700;letter-spacing:.5px;flex:none">CURRENT</span>' : ''}</div>
-      <div class="sub" style="font-size:13px;margin-top:2px">${esc(workoutsTxt(r.days))}</div></div><span class="chev">›</span></button>`).join('')}</div>
+      <div class="sub" style="font-size:13px;margin-top:2px">${esc(workoutsTxt(r.days))}</div>
+      ${schedOf(r) ? `<div class="faint" style="font-size:12px;margin-top:2px">📅 ${schedOf(r).map((x, i) => x ? DOW[i].slice(0, 3) : null).filter(Boolean).join(' · ')}</div>` : ''}</div><span class="chev">›</span></button>`).join('')}</div>
     <button class="btn ghost" style="margin-top:12px" data-a="routineNew">＋ New routine</button>
     ${ready.length ? `<div class="cap" style="margin:24px 4px 8px">Ready-made routines</div><div class="list">${ready.map(t => `<div class="card">
       <div style="font-weight:700">${esc(t.name)}</div><div class="sub" style="font-size:13px;margin:2px 0 10px">${esc(t.blurb)}</div>
       <button class="btn sm pri" data-a="routineAddTpl" data-v="${t.id}">＋ Add to my routines</button></div>`).join('')}</div>` : ''}</div>`;
+}
+function schedCard(r) {
+  if (!r.days.length) return '';
+  const sch = schedOf(r), head = '<div class="cap" style="margin:24px 4px 8px">Weekly schedule</div>';
+  if (!sch) return `${head}<div class="card"><div class="muted" style="font-size:14px;margin-bottom:10px">Not set — Home suggests the next workout in order. Set a schedule to plan which workout you do on each day of the week.</div>
+    <button class="btn pri sm" data-a="schedSetup" data-r="${r.id}">Set up weekly schedule</button></div>`;
+  const t = dowIdx(), n = sch.filter(Boolean).length;
+  return `${head}<div class="card" style="padding:2px 14px">${DOW.map((nm, i) => {
+      const d = sch[i] && r.days.find(x => x.id === sch[i]), now = r.cur && i === t;
+      return `<button class="row" style="width:100%;padding:12px 0;${i < 6 ? 'border-bottom:1px solid var(--ln)' : ''}" data-a="schedPick" data-r="${r.id}" data-i="${i}">
+        <div style="width:46px;flex:none;text-align:left;font-weight:700;${now ? 'color:var(--ac2)' : ''}">${nm.slice(0, 3)}</div>
+        <div class="grow ell" style="text-align:left;${d ? 'font-weight:600' : 'color:var(--t3)'}">${d ? esc(d.name) : 'Rest'}${now ? ' <span class="amber" style="font-size:11px;font-weight:700">· TODAY</span>' : ''}</div><span class="chev">›</span></button>`;
+    }).join('')}</div>
+    <div class="row" style="margin:6px 4px 0"><div class="grow faint" style="font-size:12px">${n} training day${n === 1 ? '' : 's'} · ${7 - n} rest</div>
+      <button class="faint" style="font-size:12px;text-decoration:underline" data-a="schedClear" data-r="${r.id}">Turn off schedule</button></div>`;
 }
 function vRoutine() {
   const r = routineById(ui.view.id);
@@ -837,6 +905,7 @@ function vRoutine() {
       <div style="font-weight:600">${esc(d.name)}</div><div class="sub" style="font-size:13px">${esc(d.subtitle)}</div>
       <div class="amber" style="font-size:12px;margin-top:3px">${d.items.length} exercises</div></div><span class="chev">›</span></button>`).join('') || '<div class="faint" style="text-align:center;padding:16px 0">No workouts yet — add one below.</div>'}</div>
     <button class="btn ghost" style="margin-top:12px" data-a="addDay" data-r="${r.id}">＋ Add workout</button>
+    ${schedCard(r)}
     <div class="row" style="gap:8px;margin-top:22px">${r.cur ? '' : `<button class="btn sm" data-a="routineCurrent" data-id="${r.id}">Make current</button>`}
       <button class="btn sm" data-a="routineRename" data-id="${r.id}">Rename</button><button class="btn sm" data-a="routineDup" data-id="${r.id}">Duplicate</button>
       <button class="btn sm danger" data-a="routineDel" data-id="${r.id}">Delete</button></div></div>`;
@@ -1954,7 +2023,8 @@ const PHOTO_SCHEMA = {
 // New routine from a template ('tpl:id') or empty; it's added to your list (not made current) and opened.
 function addRoutine(kind, typed) {
   const t = kind.startsWith('tpl:') ? tplById(kind.slice(4)) : null, id = uid();
-  db.routines.push({ id, name: typed || (t ? t.name : 'New routine'), tpl: t ? t.id : null, days: t ? buildDays(t, db.exercises) : [] });
+  const days = t ? buildDays(t, db.exercises) : [];
+  db.routines.push({ id, name: typed || (t ? t.name : 'New routine'), tpl: t ? t.id : null, sched: tplSched(t, days), days });
   save(); ui.sheet = null; ui.tab = 'workouts'; ui.stack = [{ name: 'workouts' }]; ui.view = { name: 'routine', id }; ui.resetScroll = true; render();
   toast(t ? `Added ${t.name}` : 'Routine created — add your first workout');
 }
@@ -2348,6 +2418,14 @@ function sheet() {
         <div class="cap" style="margin:4px 4px 8px">Nutrition per serving</div>
         <div class="grid2">${inp('kcal', 'Calories')}${inp('p', 'Protein (g)')}${inp('c', 'Carbs (g)')}${inp('fat', 'Fat (g)')}</div>
         <div class="row" style="gap:8px"><button class="btn" data-a="closeSheet">Cancel</button><button class="btn pri" data-a="fCustomSave">Save</button></div>`;
+      break;
+    }
+    case 'schedpick': {
+      const r = routineById(s.r), sch = schedOf(r) || [];
+      b = `<h3>${DOW[s.i]}</h3><div class="list">
+        <button class="card row" style="width:100%;padding:13px;${!sch[s.i] ? 'outline:2px solid var(--ac)' : ''}" data-a="schedSet" data-v=""><div class="grow" style="font-weight:600">💤 Rest</div></button>
+        ${r.days.map(d => `<button class="card row" style="width:100%;padding:13px;${sch[s.i] === d.id ? 'outline:2px solid var(--ac)' : ''}" data-a="schedSet" data-v="${d.id}"><div class="grow"><div style="font-weight:600">${esc(d.name)}</div><div class="sub" style="font-size:12px">${esc(d.subtitle || '')}</div></div></button>`).join('')}</div>
+        <button class="btn" style="background:none;color:var(--t2);margin-top:6px" data-a="closeSheet">Cancel</button>`;
       break;
     }
     case 'routinenew':
@@ -2969,14 +3047,24 @@ const A = {
   // nutrition: custom & saved foods
   nCustom: () => { const s = ui.view; openSheet({ type: 'fcustom', f: { name: s.q || '', brand: '', serving: '1 serving', grams: '', kcal: '', p: '', c: '', fat: '' }, meal: s.meal, day: s.day }); },
   openRoutine: d => go({ name: 'routine', id: d.id }),
+  schedSetup: d => { const r = routineById(d.r); if (!r) return; setRoutineSched(r.id, spreadSched(r.days)); save(); render(); toast('Schedule set — tap any day to change it'); },
+  schedPick: d => openSheet({ type: 'schedpick', r: d.r, i: +d.i }),
+  schedSet: d => {
+    const s = ui.sheet, r = routineById(s.r);
+    if (!r) return;
+    const sch = (schedOf(r) || Array(7).fill(null)).slice(); sch[s.i] = d.v || null;
+    setRoutineSched(r.id, sch); ui.sheet = null; save(); render();
+  },
+  schedClear: d => { setRoutineSched(d.r, null); save(); render(); toast('Schedule off — Home suggests workouts in order'); },
   routineNew: () => openSheet({ type: 'routinenew', f: { name: '' } }),
   routineAddTpl: d => addRoutine(d.v.startsWith('tpl:') ? d.v : 'tpl:' + d.v, ''),
   routineCreate: d => addRoutine(d.v, (ui.sheet.f.name || '').trim()),
   routineDup: d => {
     const r = routineById(d.id);
     if (!r) return;
-    const days = r.days.map(x => ({ ...x, id: uid(), warmup: (x.warmup || []).map(w => ({ ...w, id: uid() })), items: x.items.map(it => ({ ...it, id: uid() })) }));
-    const id = uid(); db.routines.push({ id, name: `Copy of ${r.name}`, tpl: null, days });
+    const map = {}, days = r.days.map(x => { const nid = map[x.id] = uid(); return { ...x, id: nid, warmup: (x.warmup || []).map(w => ({ ...w, id: uid() })), items: x.items.map(it => ({ ...it, id: uid() })) }; });
+    const sch = schedOf(r), id = uid();
+    db.routines.push({ id, name: `Copy of ${r.name}`, tpl: null, sched: sch ? sch.map(x => x ? map[x] : null) : null, days });
     save(); ui.view = { name: 'routine', id }; ui.resetScroll = true; render(); toast('Duplicated — rename it below');
   },
   routineCurrent: d => {
@@ -3008,9 +3096,8 @@ const A = {
   welcomeGo: d => {
     const el = document.getElementById('w-name');
     db.profile.name = el ? el.value.trim() : '';
-    if (d.v === 'empty') { db.exercises = {}; db.days = []; db.routineName = 'My routine'; }
-    if (d.v === 'four') { const t = tplById('plf4'); db.exercises = {}; db.days = buildDays(t, db.exercises); db.routineName = t.name; db.routineTpl = t.id; }
-    if (d.v === 'sample') db.routineTpl = 'split5';
+    if (d.v === 'empty') { db.exercises = {}; db.days = []; db.routineName = 'My routine'; db.routineTpl = null; db.routineSched = null; }
+    if (d.v === 'four') { const t = tplById('plf4'); db.exercises = {}; db.days = buildDays(t, db.exercises); db.routineName = t.name; db.routineTpl = t.id; db.routineSched = tplSched(t, db.days); }
     delete db.welcome; ui.sheet = null; save(); render();
     if (d.v === 'empty') tab('workouts');
   },
