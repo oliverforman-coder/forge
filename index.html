@@ -195,7 +195,7 @@ h1{font-size:30px;font-weight:700;margin:4px 0;letter-spacing:-.4px}
 
 // ---------- constants & helpers ----------
 const KEY = 'forge.v1';
-const APP_VERSION = '2.0 · routines';   // shown in Settings so you can confirm the phone has the latest upload
+const APP_VERSION = '2.1 · routine folders';   // shown in Settings so you can confirm the phone has the latest upload
 const EQ = { barbell: 'Barbell', dbSide: 'Dumbbell (per side)', dbTotal: 'Dumbbell (total)', machine: 'Machine', cable: 'Cable', bw: 'Bodyweight' };
 const PLATES = [45, 35, 25, 10, 5, 2.5];
 const uid = () => (crypto.randomUUID ? crypto.randomUUID().slice(0, 13) : Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
@@ -638,7 +638,21 @@ function save() {
   catch (e) { toast('Could not save — storage is full or blocked'); }
 }
 
-const getDay = id => db.days.find(d => d.id === id);
+// Routines: db.days is the CURRENT routine (the one Home suggests from); the others live in db.routines.
+// Every routine's workouts can be viewed and edited; starting a workout makes its routine current.
+const curRoutine = () => ({ id: db.routineId, name: db.routineName, tpl: db.routineTpl || null, days: db.days, cur: true });
+const allRoutines = () => [curRoutine(), ...db.routines];
+const routineById = id => allRoutines().find(r => r.id === id);
+const routineOfDay = dayId => allRoutines().find(r => r.days.some(d => d.id === dayId));
+const getDay = id => { for (const r of allRoutines()) { const d = r.days.find(x => x.id === id); if (d) return d; } return undefined; };
+function setRoutineDays(id, days) { if (id === db.routineId) db.days = days; else { const r = db.routines.find(x => x.id === id); if (r) r.days = days; } }
+function makeCurrent(id) {
+  const i = db.routines.findIndex(r => r.id === id);
+  if (i < 0) return;
+  const r = db.routines.splice(i, 1)[0];
+  db.routines.unshift({ id: db.routineId, name: db.routineName, tpl: db.routineTpl || null, days: db.days });
+  db.routineId = r.id; db.routineName = r.name; db.routineTpl = r.tpl || null; db.days = r.days;
+}
 const exOf = id => db.exercises[id];
 const curEntry = () => db.active ? db.active.entries[db.active.idx] : null;
 const findSet = id => { const e = curEntry(); return e ? e.sets.find(s => s.id === id) : null; };
@@ -720,6 +734,7 @@ function pickFilter() {
 function view() {
   switch (ui.view.name) {
     case 'workouts': return vWorkouts();
+    case 'routine': return vRoutine();
     case 'day': return vDay();
     case 'editor': return vEditor();
     case 'progress': return vProgress();
@@ -798,17 +813,33 @@ function vHome() {
   return h + '</div></div>';
 }
 
+const workoutsTxt = days => `${days.length} workout${days.length === 1 ? '' : 's'}${days.length ? ' · ' + days.map(d => d.name.replace(/^Day \d+\s*[—-]\s*/, '')).join(' · ') : ''}`;
 function vWorkouts() {
-  const more = db.routines.length;
-  return `<div class="scr"><h1 style="margin-top:8px">Workouts</h1>
-    <button class="card row" style="width:100%;margin:10px 0 14px;text-align:left" data-a="routines"><div class="grow" style="min-width:0">
-      <div class="cap">Routine in use</div><div class="ell" style="font-weight:700;font-size:17px;margin-top:2px">${esc(db.routineName)}</div>
-      <div class="sub" style="font-size:13px">${db.days.length} day${db.days.length === 1 ? '' : 's'}${more ? ` · ${more} more saved` : ''}</div></div>
-      <span style="color:var(--ac2);font-weight:600;font-size:14px">${more ? 'Switch' : 'Routines'} ›</span></button>
-    <div class="list">${db.days.map(d => `<button class="card row" style="width:100%" data-a="openDay" data-id="${d.id}"><div class="grow">
+  const mine = allRoutines(), have = new Set(mine.map(r => r.tpl).filter(Boolean));
+  const ready = ROUTINE_TEMPLATES.filter(t => !have.has(t.id));
+  return `<div class="scr"><h1 style="margin-top:8px">Workouts</h1><div class="sub" style="margin-bottom:14px">Pick a routine, then the workout you’re doing today</div>
+    <div class="cap" style="margin:0 4px 8px">Your routines</div>
+    <div class="list">${mine.map(r => `<button class="card row" style="width:100%;${r.cur ? 'outline:2px solid var(--ac)' : ''}" data-a="openRoutine" data-id="${r.id}"><div class="grow" style="min-width:0">
+      <div class="row" style="gap:8px"><div class="ell" style="font-weight:700;font-size:17px">${esc(r.name)}</div>${r.cur ? '<span class="amber" style="font-size:11px;font-weight:700;letter-spacing:.5px;flex:none">CURRENT</span>' : ''}</div>
+      <div class="sub" style="font-size:13px;margin-top:2px">${esc(workoutsTxt(r.days))}</div></div><span class="chev">›</span></button>`).join('')}</div>
+    <button class="btn ghost" style="margin-top:12px" data-a="routineNew">＋ New routine</button>
+    ${ready.length ? `<div class="cap" style="margin:24px 4px 8px">Ready-made routines</div><div class="list">${ready.map(t => `<div class="card">
+      <div style="font-weight:700">${esc(t.name)}</div><div class="sub" style="font-size:13px;margin:2px 0 10px">${esc(t.blurb)}</div>
+      <button class="btn sm pri" data-a="routineAddTpl" data-v="${t.id}">＋ Add to my routines</button></div>`).join('')}</div>` : ''}</div>`;
+}
+function vRoutine() {
+  const r = routineById(ui.view.id);
+  if (!r) { ui.view = { name: 'workouts' }; ui.stack = []; return vWorkouts(); }
+  return `<div class="scr"><div class="nav"><button class="navbtn" data-a="back" aria-label="Back">‹</button><span></span></div>
+    <h1>${esc(r.name)}</h1>
+    <div class="sub" style="margin-bottom:14px">${r.cur ? '<span class="amber" style="font-weight:700">Current routine</span> · Home suggests your next workout from here' : 'Starting any workout here makes this your current routine'}</div>
+    <div class="list">${r.days.map(d => `<button class="card row" style="width:100%" data-a="openDay" data-id="${d.id}"><div class="grow">
       <div style="font-weight:600">${esc(d.name)}</div><div class="sub" style="font-size:13px">${esc(d.subtitle)}</div>
-      <div class="amber" style="font-size:12px;margin-top:3px">${d.items.length} exercises</div></div><span class="chev">›</span></button>`).join('')}</div>
-    <button class="btn ghost" style="margin-top:12px" data-a="addDay">＋ Add day</button></div>`;
+      <div class="amber" style="font-size:12px;margin-top:3px">${d.items.length} exercises</div></div><span class="chev">›</span></button>`).join('') || '<div class="faint" style="text-align:center;padding:16px 0">No workouts yet — add one below.</div>'}</div>
+    <button class="btn ghost" style="margin-top:12px" data-a="addDay" data-r="${r.id}">＋ Add workout</button>
+    <div class="row" style="gap:8px;margin-top:22px">${r.cur ? '' : `<button class="btn sm" data-a="routineCurrent" data-id="${r.id}">Make current</button>`}
+      <button class="btn sm" data-a="routineRename" data-id="${r.id}">Rename</button><button class="btn sm" data-a="routineDup" data-id="${r.id}">Duplicate</button>
+      <button class="btn sm danger" data-a="routineDel" data-id="${r.id}">Delete</button></div></div>`;
 }
 
 function itemLine(it, ex) {
@@ -1920,6 +1951,13 @@ const PHOTO_SCHEMA = {
     note: { type: 'string' },
   },
 };
+// New routine from a template ('tpl:id') or empty; it's added to your list (not made current) and opened.
+function addRoutine(kind, typed) {
+  const t = kind.startsWith('tpl:') ? tplById(kind.slice(4)) : null, id = uid();
+  db.routines.push({ id, name: typed || (t ? t.name : 'New routine'), tpl: t ? t.id : null, days: t ? buildDays(t, db.exercises) : [] });
+  save(); ui.sheet = null; ui.tab = 'workouts'; ui.stack = [{ name: 'workouts' }]; ui.view = { name: 'routine', id }; ui.resetScroll = true; render();
+  toast(t ? `Added ${t.name}` : 'Routine created — add your first workout');
+}
 // Must run inside the tap's handler: iOS only opens the camera/photo picker from a user tap.
 function shootPhoto() { document.getElementById('photo-file').click(); }
 async function shrinkPhoto(file) {   // ≤1568 px JPEG: plenty for a label, and keeps the upload small
@@ -2114,7 +2152,7 @@ function vSettings() {
     <div class="card"><div class="muted" style="font-size:14px;margin-bottom:12px">Your log lives on this phone only. Export a backup now and then and save it to Files or iCloud Drive. Last backup: <b style="color:var(--t1)">${lb}</b>.</div>
       <div class="list"><button class="btn pri" data-a="exportData">Export backup</button><button class="btn" data-a="importData">Restore from backup…</button></div></div>
     <div class="cap" style="margin:22px 4px 8px">Routine</div>
-    <div class="card"><div class="muted" style="font-size:14px;margin-bottom:12px">Keep several routines and switch between them — e.g. a 5-day and a 4-day plan. History and weights carry over.</div>
+    <div class="card"><div class="muted" style="font-size:14px;margin-bottom:12px">Keep several routines — e.g. a 5-day and a 4-day plan — each with its own workouts. History and weights carry over between them.</div>
       <button class="btn" data-a="routinesGo">Manage routines</button></div>
     <div class="cap" style="margin:22px 4px 8px">Coach profile</div>
     <div class="card"><div class="sub" style="margin-bottom:8px">Muscle groups to prioritise</div>
@@ -2312,26 +2350,13 @@ function sheet() {
         <div class="row" style="gap:8px"><button class="btn" data-a="closeSheet">Cancel</button><button class="btn pri" data-a="fCustomSave">Save</button></div>`;
       break;
     }
-    case 'routines': {
-      const daysTxt = ds => `${ds.length} day${ds.length === 1 ? '' : 's'} · ${ds.map(d => d.name.replace(/^Day \d+\s*[—-]\s*/, '')).join(' · ') || 'no days yet'}`;
-      b = `<h3>Routines</h3>
-        <div class="card" style="outline:2px solid var(--ac);margin-bottom:10px"><div class="row"><div class="grow" style="min-width:0"><div class="cap" style="color:var(--ac2)">✓ In use</div>
-          <div style="font-weight:700;margin-top:2px">${esc(db.routineName)}</div><div class="sub" style="font-size:12px">${esc(daysTxt(db.days))}</div></div>
-          <button class="btn sm" style="width:auto;padding:8px 12px" data-a="routineRename" data-id="${db.routineId}">Rename</button></div></div>
-        ${db.routines.map(r => `<div class="card" style="margin-bottom:10px"><div style="font-weight:700">${esc(r.name)}</div><div class="sub" style="font-size:12px;margin-bottom:10px">${esc(daysTxt(r.days))}</div>
-          <div class="row" style="gap:8px"><button class="btn sm pri" data-a="routineUse" data-id="${r.id}">Use this</button><button class="btn sm" data-a="routineRename" data-id="${r.id}">Rename</button><button class="btn sm danger" data-a="routineDel" data-id="${r.id}">Delete</button></div></div>`).join('')}
-        <button class="btn ghost" data-a="routineNew">＋ New routine</button>
-        <div class="faint" style="font-size:12px;text-align:center;margin-top:12px">All routines share your exercises and workout history, so weights and progress carry over when you switch.</div>`;
-      break;
-    }
     case 'routinenew':
       b = `<h3>New routine</h3>
-        <div class="field"><div class="cap">Name (optional)</div><input data-k="name" value="${esc(s.f.name)}" placeholder="e.g. 4-day plan" autocapitalize="words"></div>
+        <div class="field"><div class="cap">Name</div><input data-k="name" value="${esc(s.f.name)}" placeholder="e.g. Summer cut, 3-day travel" autocapitalize="words"></div>
         <div class="cap" style="margin:4px 4px 8px">Start from</div><div class="list">
-        ${ROUTINE_TEMPLATES.map(t => `<button class="card" style="width:100%;text-align:left;padding:14px" data-a="routineCreate" data-v="tpl:${t.id}"><div style="font-weight:700">${esc(t.name)}</div><div class="sub" style="font-size:13px;margin-top:2px">${esc(t.blurb)}</div></button>`).join('')}
-        <button class="card" style="width:100%;text-align:left;padding:14px" data-a="routineCreate" data-v="copy"><div style="font-weight:700">A copy of “${esc(db.routineName)}”</div><div class="sub" style="font-size:13px;margin-top:2px">Same days and exercises, to tweak without touching the original</div></button>
-        <button class="card" style="width:100%;text-align:left;padding:14px" data-a="routineCreate" data-v="empty"><div style="font-weight:700">Empty</div><div class="sub" style="font-size:13px;margin-top:2px">Add your own days and exercises from the library</div></button></div>
-        <div class="faint" style="font-size:12px;text-align:center;margin-top:12px">The new routine is switched on right away. “${esc(db.routineName)}” is kept under Routines.</div>`;
+        <button class="card" style="width:100%;text-align:left;padding:14px" data-a="routineCreate" data-v="empty"><div style="font-weight:700">Empty</div><div class="sub" style="font-size:13px;margin-top:2px">Add workouts and pick exercises from the library</div></button>
+        ${ROUTINE_TEMPLATES.map(t => `<button class="card" style="width:100%;text-align:left;padding:14px" data-a="routineCreate" data-v="tpl:${t.id}"><div style="font-weight:700">${esc(t.name)}</div><div class="sub" style="font-size:13px;margin-top:2px">${esc(t.blurb)}</div></button>`).join('')}</div>
+        <div class="faint" style="font-size:12px;text-align:center;margin-top:12px">To start from one of your own routines, open it and tap Duplicate.</div>`;
       break;
     case 'rrename':
       b = `<h3>Rename routine</h3><div class="field"><div class="cap">Name</div><input data-k="name" value="${esc(s.f.name)}" autocapitalize="words"></div>
@@ -2460,6 +2485,8 @@ function begin(id) {
   const d = getDay(id);
   if (!d) return;
   if (!d.items.length) { toast('Add exercises to this day first'); render(); return; }
+  const r = routineOfDay(id);
+  if (r && !r.cur) { makeCurrent(r.id); toast(`${r.name} is now your current routine`); }
   db.active = { id: uid(), dayId: d.id, dayName: d.name, date: new Date().toISOString(), idx: 0, rest: null,
     warmup: (d.warmup || []).map(w => ({ ...w, done: false })),
     entries: d.items.map(it => {
@@ -2804,28 +2831,32 @@ const A = {
       fn: () => { const day = getDay(d.day); if (day) { day.items = day.items.filter(x => x.id !== d.id); save(); } } });
   },
   rename: d => { const day = getDay(d.id); openSheet({ type: 'rename', dayId: day.id, f: { name: day.name, subtitle: day.subtitle } }); },
-  addDay: () => openSheet({ type: 'rename', dayId: null, f: { name: '', subtitle: '' } }),
+  addDay: d => openSheet({ type: 'rename', dayId: null, routineId: d.r || db.routineId, f: { name: '', subtitle: '' } }),
   renameSave: () => {
     const s = ui.sheet, name = (s.f.name || '').trim();
     if (!name) { toast('Give the day a name'); return; }
     if (s.dayId) { const day = getDay(s.dayId); day.name = name; day.subtitle = (s.f.subtitle || '').trim(); ui.sheet = null; save(); render(); }
     else {
-      const day = { id: uid(), name, subtitle: (s.f.subtitle || '').trim(), items: [] };
-      db.days.push(day); save(); ui.sheet = null;
+      const day = { id: uid(), name, subtitle: (s.f.subtitle || '').trim(), warmup: [], items: [] };
+      (routineById(s.routineId) || curRoutine()).days.push(day); save(); ui.sheet = null;
       ui.stack.push(ui.view, { name: 'day', id: day.id }); ui.view = { name: 'editor', id: day.id }; ui.resetScroll = true; render();
     }
   },
   delDay: d => {
     const day = getDay(d.id);
     openSheet({ type: 'confirm', title: `Delete ${day.name}?`, msg: 'Your logged workouts for this day stay in History.', ok: 'Delete day', danger: true,
-      fn: () => { db.days = db.days.filter(x => x.id !== d.id); save(); ui.tab = 'workouts'; ui.view = { name: 'workouts' }; ui.stack = []; } });
+      fn: () => {
+        const r = routineOfDay(d.id);
+        if (r) setRoutineDays(r.id, r.days.filter(x => x.id !== d.id));
+        save(); ui.tab = 'workouts'; ui.stack = [{ name: 'workouts' }]; ui.view = r ? { name: 'routine', id: r.id } : { name: 'workouts' };
+      } });
   },
   // history & settings
   delSession: d => openSheet({ type: 'confirm', title: 'Delete this workout?', msg: 'It will be removed from History and Stats.', ok: 'Delete', danger: true,
     fn: () => { db.sessions = db.sessions.filter(x => x.id !== d.id); save(); back(); } }),
   exportData: () => exportData(),
   importData: () => document.getElementById('import-file').click(),
-  routinesGo: () => { tab('workouts'); openSheet({ type: 'routines' }); },
+  routinesGo: () => tab('workouts'),
   eraseAll: () => openSheet({ type: 'confirm', title: 'Erase all data?', msg: 'Deletes every workout and edit on this phone. Export a backup first if you might want it.', ok: 'Erase everything', danger: true,
     fn: () => { db = seed(); save(); try { localStorage.removeItem(AI_KEY); } catch (e) {} ui.tab = 'home'; ui.view = { name: 'home' }; ui.stack = []; toast('All data erased'); } }),
   // effort & warm-up during a workout
@@ -2937,53 +2968,49 @@ const A = {
   fDel: () => { const s = ui.sheet, day = nDay(s.day); day.entries = day.entries.filter(x => x.id !== s.entryId); ui.sheet = null; save(); render(); },
   // nutrition: custom & saved foods
   nCustom: () => { const s = ui.view; openSheet({ type: 'fcustom', f: { name: s.q || '', brand: '', serving: '1 serving', grams: '', kcal: '', p: '', c: '', fat: '' }, meal: s.meal, day: s.day }); },
-  routines: () => openSheet({ type: 'routines' }),
-  routineUse: d => {
-    if (db.active) { toast('Finish or discard the workout in progress first'); return; }
-    const i = db.routines.findIndex(r => r.id === d.id);
-    if (i < 0) return;
-    const r = db.routines.splice(i, 1)[0];
-    db.routines.push({ id: db.routineId, name: db.routineName, days: db.days });
-    db.routineId = r.id; db.routineName = r.name; db.days = r.days;
-    ui.sheet = null; save(); render(); toast(`Now using ${r.name}`);
+  openRoutine: d => go({ name: 'routine', id: d.id }),
+  routineNew: () => openSheet({ type: 'routinenew', f: { name: '' } }),
+  routineAddTpl: d => addRoutine(d.v.startsWith('tpl:') ? d.v : 'tpl:' + d.v, ''),
+  routineCreate: d => addRoutine(d.v, (ui.sheet.f.name || '').trim()),
+  routineDup: d => {
+    const r = routineById(d.id);
+    if (!r) return;
+    const days = r.days.map(x => ({ ...x, id: uid(), warmup: (x.warmup || []).map(w => ({ ...w, id: uid() })), items: x.items.map(it => ({ ...it, id: uid() })) }));
+    const id = uid(); db.routines.push({ id, name: `Copy of ${r.name}`, tpl: null, days });
+    save(); ui.view = { name: 'routine', id }; ui.resetScroll = true; render(); toast('Duplicated — rename it below');
   },
-  routineNew: () => {
+  routineCurrent: d => {
     if (db.active) { toast('Finish or discard the workout in progress first'); return; }
-    openSheet({ type: 'routinenew', f: { name: '' }, back: ui.sheet });
-  },
-  routineCreate: d => {
-    const s = ui.sheet, typed = (s.f.name || '').trim(), t = d.v.startsWith('tpl:') ? tplById(d.v.slice(4)) : null;
-    let days, name;
-    if (t) { days = buildDays(t, db.exercises); name = t.name; }
-    else if (d.v === 'copy') {   // fresh ids so the two routines never share a day
-      days = db.days.map(x => ({ ...x, id: uid(), warmup: x.warmup.map(w => ({ ...w, id: uid() })), items: x.items.map(it => ({ ...it, id: uid() })) }));
-      name = `Copy of ${db.routineName}`;
-    } else { days = []; name = 'New routine'; }
-    db.routines.push({ id: db.routineId, name: db.routineName, days: db.days });
-    db.routineId = uid(); db.routineName = typed || name; db.days = days;
-    ui.sheet = null; save(); tab('workouts'); toast(`Created ${db.routineName} — switched to it`);
+    makeCurrent(d.id); save(); render(); toast(`${db.routineName} is now your current routine`);
   },
   routineRename: d => {
-    const r = d.id === db.routineId ? { name: db.routineName } : db.routines.find(x => x.id === d.id);
-    if (r) openSheet({ type: 'rrename', id: d.id, f: { name: r.name }, back: ui.sheet });
+    const r = routineById(d.id);
+    if (r) openSheet({ type: 'rrename', id: d.id, f: { name: r.name } });
   },
   routineRenameSave: () => {
     const s = ui.sheet, name = (s.f.name || '').trim();
     if (!name) { toast('Give the routine a name'); return; }
     if (s.id === db.routineId) db.routineName = name; else { const r = db.routines.find(x => x.id === s.id); if (r) r.name = name; }
-    save(); ui.sheet = { type: 'routines' }; render();
+    ui.sheet = null; save(); render();
   },
   routineDel: d => {
-    const r = db.routines.find(x => x.id === d.id);
+    const r = routineById(d.id);
     if (!r) return;
-    openSheet({ type: 'confirm', title: `Delete ${r.name}?`, msg: 'Removes this routine’s days. Your exercises and workout history are kept.', ok: 'Delete routine', danger: true,
-      fn: () => { db.routines = db.routines.filter(x => x.id !== d.id); save(); toast('Routine deleted'); } });
+    if (!db.routines.length) { toast('This is your only routine — add another before deleting it'); return; }
+    if (r.cur && db.active) { toast('Finish or discard the workout in progress first'); return; }
+    openSheet({ type: 'confirm', title: `Delete ${r.name}?`, msg: `Removes its ${r.days.length} workouts. Your exercises and logged history are kept.`, ok: 'Delete routine', danger: true,
+      fn: () => {
+        if (r.cur) makeCurrent(db.routines[0].id);   // another routine takes over as current
+        db.routines = db.routines.filter(x => x.id !== r.id);
+        save(); ui.tab = 'workouts'; ui.view = { name: 'workouts' }; ui.stack = []; toast('Routine deleted');
+      } });
   },
   welcomeGo: d => {
     const el = document.getElementById('w-name');
     db.profile.name = el ? el.value.trim() : '';
     if (d.v === 'empty') { db.exercises = {}; db.days = []; db.routineName = 'My routine'; }
-    if (d.v === 'four') { const t = tplById('plf4'); db.exercises = {}; db.days = buildDays(t, db.exercises); db.routineName = t.name; }
+    if (d.v === 'four') { const t = tplById('plf4'); db.exercises = {}; db.days = buildDays(t, db.exercises); db.routineName = t.name; db.routineTpl = t.id; }
+    if (d.v === 'sample') db.routineTpl = 'split5';
     delete db.welcome; ui.sheet = null; save(); render();
     if (d.v === 'empty') tab('workouts');
   },
