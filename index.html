@@ -195,7 +195,7 @@ h1{font-size:30px;font-weight:700;margin:4px 0;letter-spacing:-.4px}
 
 // ---------- constants & helpers ----------
 const KEY = 'forge.v1';
-const APP_VERSION = '1.9 · fist measurements';   // shown in Settings so you can confirm the phone has the latest upload
+const APP_VERSION = '2.0 · routines';   // shown in Settings so you can confirm the phone has the latest upload
 const EQ = { barbell: 'Barbell', dbSide: 'Dumbbell (per side)', dbTotal: 'Dumbbell (total)', machine: 'Machine', cable: 'Cable', bw: 'Bodyweight' };
 const PLATES = [45, 35, 25, 10, 5, 2.5];
 const uid = () => (crypto.randomUUID ? crypto.randomUUID().slice(0, 13) : Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
@@ -456,7 +456,8 @@ const DRILLS = [
   { id: 'deadbug', name: 'Dead bug', dose: '2 × 8 each side', tags: ['core'], why: 'Trunk stability that carries over to every heavy lift.' },
   { id: 'birddog', name: 'Bird dog', dose: '2 × 8 each side', tags: ['core', 'hinge'], why: 'Back-friendly stability work for hinging.' },
   { id: 'sideplank', name: 'Side plank', dose: '2 × 30 s each side', tags: ['obliques'], why: 'Lateral core strength — little else in your routine trains it.' },
-  { id: 'slbalance', name: 'Single-leg balance reach', dose: '2 × 8 each side', tags: ['squat'], why: 'Balance and knee control for lunges and split squats.' }
+  { id: 'slbalance', name: 'Single-leg balance reach', dose: '2 × 8 each side', tags: ['squat'], why: 'Balance and knee control for lunges and split squats.' },
+  { id: 'crabwalk', name: 'Banded crab walks', dose: '2 × 10 steps each way', tags: ['squat'], why: 'Wakes up the glutes so they share the work on squats, lunges and hip thrusts.' }
 ];
 
 const I = {
@@ -473,80 +474,121 @@ const I = {
 };
 
 // ---------- default routine ----------
-// A fresh install starts with this sample routine (or empty, picked on the welcome screen).
-function seed() {
-  const exercises = {}, byName = {}, days = [];
-  const ex = (name, muscle, equip, setup = '', rest = 120) => {
-    if (byName[name]) return byName[name];
+// Built-in routine templates. Exercises are matched to the ones you already have by name,
+// so a new routine picks up your history, weights and setup notes.
+// Day: [name, subtitle, warm-up drill ids, items]; item: [exercise, muscle, equipment, sets, min reps, max reps, rest s, setup]
+const ROUTINE_TEMPLATES = [
+  { id: 'split5', name: '5-day split', blurb: 'Push · Pull · Legs A · Push/Pull · Legs B — about 125 sets a week', days: [
+    ["Day 1 — Push", "Chest / Shoulders / Triceps", ["pullapart", "chin"], [
+      ["Incline Dumbbell Press", "Chest", "dbSide", 3, 6, 10, 150, "Incline 45°"],
+      ["Lateral Raise", "Shoulders", "dbSide", 4, 12, 15, 75, "DB or cable · slow"],
+      ["Flat DB Press", "Chest", "dbSide", 3, 6, 10, 150, ""],
+      ["Seated Shoulder Press", "Shoulders", "dbSide", 3, 6, 10, 150, ""],
+      ["Cable Fly / Pec Deck", "Chest", "cable", 3, 12, 15, 90, ""],
+      ["Skullcrusher", "Triceps", "barbell", 3, 10, 12, 90, ""],
+      ["Triceps Pulldown", "Triceps", "cable", 3, 8, 12, 75, ""]]],
+    ["Day 2 — Pull", "Back / Rear Delts / Biceps", ["pullapart", "chin"], [
+      ["Deadlift", "Back", "barbell", 2, 6, 8, 180, ""],
+      ["Lat Pulldown", "Back", "machine", 3, 6, 10, 150, ""],
+      ["One-Arm Row", "Back", "dbSide", 3, 6, 10, 120, ""],
+      ["CG Lat Pulldown", "Back", "machine", 3, 8, 12, 90, "Close grip"],
+      ["Chest-Supported / Cable Row", "Back", "machine", 3, 8, 12, 120, ""],
+      ["Rear Delts", "Rear delts", "machine", 3, 12, 15, 75, ""],
+      ["Cable Curl", "Biceps", "cable", 3, 10, 12, 75, ""],
+      ["Incline Hammer Curl", "Biceps", "dbSide", 2, 10, 12, 75, "Incline 45°"]]],
+    ["Day 3 — Legs A", "Quads / Glutes / Hamstrings", ["crabwalk"], [
+      ["Single-Leg RDL", "Hamstrings", "dbSide", 3, 8, 12, 90, ""],
+      ["Front Squat", "Quads", "barbell", 3, 6, 10, 180, ""],
+      ["Leg Curls", "Hamstrings", "machine", 3, 10, 12, 90, ""],
+      ["Walking Lunges", "Quads", "dbSide", 3, 10, 12, 120, "10–12 each leg"],
+      ["Abductors", "Glutes", "machine", 2, 10, 12, 75, ""],
+      ["Adductors", "Adductors", "machine", 3, 10, 12, 75, ""],
+      ["Leg Extensions", "Quads", "machine", 3, 10, 12, 90, ""],
+      ["Hip Thrusts", "Glutes", "barbell", 3, 10, 12, 120, ""],
+      ["Standing Calf Raise", "Calves", "machine", 3, 12, 15, 75, ""],
+      ["Weighted Abs / Hanging Leg Raises", "Core", "bw", 3, 15, 20, 60, ""]]],
+    ["Day 4 — Push/Pull", "Push / Pull hybrid", ["pullapart", "chin"], [
+      ["Incline Dumbbell Press", "Chest", "dbSide", 3, 8, 12, 150, "Incline 45°"],
+      ["Dumbbell Press", "Chest", "dbSide", 3, 8, 12, 150, ""],
+      ["Lateral Raise (Cable)", "Shoulders", "cable", 4, 10, 12, 75, ""],
+      ["Shoulder Press", "Shoulders", "dbSide", 2, 8, 12, 150, ""],
+      ["Weighted Pull-Ups / Lat Pulldown", "Back", "machine", 3, 6, 10, 150, ""],
+      ["Bent-Over Rows", "Back", "barbell", 3, 8, 10, 150, ""],
+      ["Face Pulls", "Rear delts", "cable", 3, 12, 15, 75, ""],
+      ["Incline Curls", "Biceps", "dbSide", 2, 8, 10, 75, "Incline 45°"],
+      ["Triceps Rope Pushdown", "Triceps", "cable", 3, 10, 12, 75, ""],
+      ["Shrugs", "Traps", "dbSide", 2, 10, 12, 90, ""]]],
+    ["Day 5 — Legs B", "Quads / Glutes / Hamstrings", ["crabwalk"], [
+      ["Box Jumps", "Quads", "bw", 3, 5, 5, 90, ""],
+      ["Romanian Deadlift", "Hamstrings", "barbell", 3, 8, 10, 180, ""],
+      ["Leg Press", "Quads", "machine", 3, 6, 10, 180, ""],
+      ["Bulgarian Split Squat", "Quads", "dbSide", 3, 6, 10, 150, "Each leg"],
+      ["Leg Curl (Seated or Lying)", "Hamstrings", "machine", 3, 10, 12, 90, ""],
+      ["Hip Thrusts", "Glutes", "barbell", 3, 10, 12, 120, ""],
+      ["Leg Extensions", "Quads", "machine", 2, 10, 12, 90, ""],
+      ["Adductor", "Adductors", "machine", 2, 10, 12, 75, ""],
+      ["Standing Calf Raise", "Calves", "machine", 4, 12, 15, 75, ""],
+      ["Weighted Abs / Sit-Ups", "Core", "bw", 3, 15, 20, 60, ""]]]] },
+  { id: 'plf4', name: '4-day Push · Legs · Pull · Full Body', blurb: 'One extra rest day, about 100 sets a week — e.g. Mon · Tue · Thu · Sat', days: [
+    ["Day 1 — Push", "Chest / Shoulders / Triceps", ["pullapart", "chin"], [
+      ["Incline Dumbbell Press", "Chest", "dbSide", 4, 6, 10, 150, "Incline 45°"],
+      ["Lateral Raise", "Shoulders", "dbSide", 4, 12, 15, 75, "DB or cable · slow"],
+      ["Flat DB Press", "Chest", "dbSide", 3, 6, 10, 150, ""],
+      ["Seated Shoulder Press", "Shoulders", "dbSide", 3, 6, 10, 150, ""],
+      ["Cable Fly / Pec Deck", "Chest", "cable", 3, 12, 15, 90, ""],
+      ["Skullcrusher", "Triceps", "barbell", 3, 10, 12, 90, ""],
+      ["Triceps Pulldown", "Triceps", "cable", 3, 8, 12, 75, ""]]],
+    ["Day 2 — Legs A", "Quads / Glutes / Hamstrings", ["crabwalk"], [
+      ["Front Squat", "Quads", "barbell", 4, 6, 10, 180, ""],
+      ["Single-Leg RDL", "Hamstrings", "dbSide", 3, 8, 12, 90, ""],
+      ["Walking Lunges", "Quads", "dbSide", 4, 10, 12, 120, "10–12 each leg"],
+      ["Leg Curls", "Hamstrings", "machine", 3, 10, 12, 90, ""],
+      ["Hip Thrusts", "Glutes", "barbell", 3, 10, 12, 120, ""],
+      ["Leg Extensions", "Quads", "machine", 3, 10, 12, 90, ""],
+      ["Adductors", "Adductors", "machine", 2, 10, 12, 75, ""],
+      ["Standing Calf Raise", "Calves", "machine", 3, 12, 15, 75, ""],
+      ["Weighted Abs / Hanging Leg Raises", "Core", "bw", 3, 15, 20, 60, ""]]],
+    ["Day 3 — Pull", "Back / Rear Delts / Biceps", ["pullapart", "chin"], [
+      ["Deadlift", "Back", "barbell", 2, 6, 8, 180, ""],
+      ["Lat Pulldown", "Back", "machine", 3, 6, 10, 150, ""],
+      ["One-Arm Row", "Back", "dbSide", 3, 6, 10, 120, ""],
+      ["CG Lat Pulldown", "Back", "machine", 3, 8, 12, 90, "Close grip"],
+      ["Chest-Supported / Cable Row", "Back", "machine", 3, 8, 12, 120, ""],
+      ["Rear Delts", "Rear delts", "machine", 3, 12, 15, 75, ""],
+      ["Cable Curl", "Biceps", "cable", 3, 10, 12, 75, ""],
+      ["Incline Hammer Curl", "Biceps", "dbSide", 2, 10, 12, 75, "Incline 45°"]]],
+    ["Day 4 — Full Body", "Legs-first full body", ["pullapart", "chin", "crabwalk"], [
+      ["Leg Press", "Quads", "machine", 3, 6, 10, 180, ""],
+      ["Incline Dumbbell Press", "Chest", "dbSide", 3, 8, 12, 150, "Incline 45°"],
+      ["Romanian Deadlift", "Hamstrings", "barbell", 3, 8, 10, 180, ""],
+      ["Weighted Pull-Ups / Lat Pulldown", "Back", "machine", 3, 6, 10, 150, ""],
+      ["Hip Thrusts", "Glutes", "barbell", 3, 10, 12, 120, ""],
+      ["Lateral Raise (Cable)", "Shoulders", "cable", 3, 10, 12, 75, ""],
+      ["Leg Curl (Seated or Lying)", "Hamstrings", "machine", 2, 10, 12, 90, ""],
+      ["Face Pulls", "Rear delts", "cable", 2, 12, 15, 75, ""],
+      ["Standing Calf Raise", "Calves", "machine", 3, 12, 15, 75, ""]]]] },
+];
+// Builds a routine's days, reusing exercises from `exercises` by name and adding any that are missing.
+function buildDays(tpl, exercises) {
+  const byName = {};
+  Object.values(exercises).forEach(e => { byName[e.name.toLowerCase()] = e.id; });
+  const exId = ([name, muscle, equip, , , , rest, setup]) => {
+    const k = name.toLowerCase();
+    if (byName[k]) return byName[k];
     const id = uid(), t = tagsFor(name, muscle);
-    exercises[id] = { id, name, muscle, equip, setup, rest, prim: t.prim, sec: t.sec };
-    byName[name] = id;
-    return id;
+    exercises[id] = { id, name, muscle, equip, setup: setup || '', rest: rest || 120, prim: t.prim, sec: t.sec };
+    return byName[k] = id;
   };
-  // [exerciseId, sets, repMin, repMax]
-  const day = (name, subtitle, items) => days.push({ id: uid(), name, subtitle, warmup: [],
-    items: items.map(([exId, sets, a, b]) => ({ id: uid(), exId, sets, repMin: a, repMax: b, rest: null, start: null })) });
+  return tpl.days.map(([name, subtitle, warm, items]) => ({ id: uid(), name, subtitle,
+    warmup: warm.map(w => DRILLS.find(d => d.id === w)).filter(Boolean).map(dr => ({ id: uid(), drill: dr.id, name: dr.name, dose: dr.dose })),
+    items: items.map(it => ({ id: uid(), exId: exId(it), sets: it[3], repMin: it[4], repMax: it[5], rest: null, start: null })) }));
+}
+const tplById = id => ROUTINE_TEMPLATES.find(t => t.id === id);
 
-  day('Day 1 — Push', 'Chest / Shoulders / Triceps', [
-    [ex('Incline Dumbbell Press', 'Chest', 'dbSide', 'Incline 45°', 150), 3, 6, 10],
-    [ex('Lateral Raise', 'Shoulders', 'dbSide', 'DB or cable · slow', 75), 4, 12, 15],
-    [ex('Flat DB Press', 'Chest', 'dbSide', '', 150), 3, 6, 10],
-    [ex('Seated Shoulder Press', 'Shoulders', 'dbSide', '', 150), 3, 6, 10],
-    [ex('Cable Fly / Pec Deck', 'Chest', 'cable', '', 90), 3, 12, 15],
-    [ex('Skullcrusher', 'Triceps', 'barbell', '', 90), 3, 10, 12],
-    [ex('Triceps Pulldown', 'Triceps', 'cable', '', 75), 3, 8, 12]]);
-  day('Day 2 — Pull', 'Back / Rear Delts / Biceps', [
-    [ex('Lat Pulldown', 'Back', 'machine', '', 150), 3, 6, 10],
-    [ex('One-Arm Row', 'Back', 'dbSide', '', 120), 3, 6, 10],
-    [ex('Deadlift', 'Back', 'barbell', '', 180), 2, 6, 10],
-    [ex('CG Lat Pulldown', 'Back', 'machine', 'Close grip', 90), 3, 8, 12],
-    [ex('Chest-Supported / Cable Row', 'Back', 'machine', '', 120), 3, 8, 12],
-    [ex('Rear Delts', 'Rear delts', 'machine', '', 75), 3, 12, 15],
-    [ex('Cable Curl', 'Biceps', 'cable', '', 75), 3, 10, 12],
-    [ex('Incline Hammer Curl', 'Biceps', 'dbSide', 'Incline 45°', 75), 2, 10, 12]]);
-  day('Day 3 — Legs A', 'Quads / Glutes / Hamstrings', [
-    [ex('Single-Leg RDL', 'Hamstrings', 'dbSide', '', 90), 3, 8, 12],
-    [ex('Front Squat', 'Quads', 'barbell', '', 180), 3, 6, 10],
-    [ex('Leg Curls', 'Hamstrings', 'machine', '', 90), 3, 10, 12],
-    [ex('Walking Lunges', 'Quads', 'dbSide', '10–12 each leg', 120), 3, 10, 12],
-    [ex('Abductors', 'Glutes', 'machine', '', 75), 2, 10, 12],
-    [ex('Adductors', 'Adductors', 'machine', '', 75), 3, 10, 12],
-    [ex('Leg Extensions', 'Quads', 'machine', '', 90), 3, 10, 12],
-    [ex('Hip Thrusts', 'Glutes', 'barbell', '', 120), 3, 10, 12],
-    [ex('Standing Calf Raise', 'Calves', 'machine', '', 75), 3, 12, 15],
-    [ex('Weighted Abs / Hanging Leg Raises', 'Core', 'bw', '', 60), 3, 15, 20]]);
-  day('Day 4 — Push/Pull', 'Push / Pull hybrid', [
-    [ex('Incline Dumbbell Press', 'Chest', 'dbSide', 'Incline 45°', 150), 3, 6, 10],
-    [ex('Lateral Raise (Cable)', 'Shoulders', 'cable', '', 75), 4, 10, 12],
-    [ex('Dumbbell Press', 'Chest', 'dbSide', '', 150), 3, 6, 10],
-    [ex('Shoulder Press', 'Shoulders', 'dbSide', '', 150), 3, 8, 12],
-    [ex('Cable Fly / Pec Deck', 'Chest', 'cable', '', 90), 2, 8, 12],
-    [ex('Weighted Pull-Ups / Lat Pulldown', 'Back', 'machine', '', 150), 2, 6, 10],
-    [ex('Bent-Over Rows', 'Back', 'barbell', '', 150), 3, 8, 10],
-    [ex('Pulldowns', 'Back', 'machine', '', 120), 2, 8, 12],
-    [ex('Machine Row', 'Back', 'machine', '', 120), 2, 8, 12],
-    [ex('Shrugs', 'Traps', 'dbSide', '', 90), 2, 10, 12],
-    [ex('Cable Arrow Pulls', 'Rear delts', 'cable', '', 75), 2, 12, 15],
-    [ex('Face Pulls', 'Rear delts', 'cable', '', 75), 3, 8, 12],
-    [ex('Incline Curls', 'Biceps', 'dbSide', 'Incline 45°', 75), 3, 8, 10],
-    [ex('DB Overhead Triceps Extension', 'Triceps', 'dbSide', '', 75), 2, 10, 12],
-    [ex('Hammer Curls', 'Biceps', 'dbSide', '', 75), 2, 8, 12],
-    [ex('Triceps Rope Pushdown', 'Triceps', 'cable', '', 75), 3, 10, 12]]);
-  day('Day 5 — Legs B', 'Quads / Glutes / Hamstrings', [
-    [ex('Step-Ups', 'Quads', 'bw', '', 90), 2, 10, 10],
-    [ex('Box Jumps', 'Quads', 'bw', '', 90), 3, 10, 10],
-    [ex('Romanian Deadlift', 'Hamstrings', 'barbell', '', 180), 3, 8, 10],
-    [ex('Bulgarian Split Squat', 'Quads', 'dbSide', 'Each leg', 150), 3, 6, 10],
-    [ex('Leg Curl (Seated or Lying)', 'Hamstrings', 'machine', '', 90), 3, 10, 12],
-    [ex('Leg Press', 'Quads', 'machine', '', 180), 3, 6, 10],
-    [ex('Crab Walk', 'Glutes', 'bw', '', 60), 3, 12, 12],
-    [ex('Adductor', 'Adductors', 'machine', '', 75), 2, 10, 12],
-    [ex('Leg Extensions', 'Quads', 'machine', '', 90), 2, 10, 12],
-    [ex('Hip Thrusts', 'Glutes', 'barbell', '', 120), 3, 10, 12],
-    [ex('Standing Calf Raise', 'Calves', 'machine', '', 75), 3, 12, 15],
-    [ex('Seated Calf Raise', 'Calves', 'machine', '', 75), 3, 12, 15],
-    [ex('Weighted Abs / Sit-Ups', 'Core', 'bw', '', 60), 3, 15, 20]]);
-  return { v: 1, exercises, days, sessions: [], active: null, lastBackup: null, hideInstall: false, profile: defaultProfile(), coachSeen: null, coachApplied: [], mode: 'train', nutri: defaultNutri() };
+// A fresh install starts with the 5-day template (or the 4-day / empty, picked on the welcome screen).
+function seed() {
+  const exercises = {}, days = buildDays(ROUTINE_TEMPLATES[0], exercises);
+  return { v: 1, exercises, days, routineId: uid(), routineName: ROUTINE_TEMPLATES[0].name, routines: [], sessions: [], active: null, lastBackup: null, hideInstall: false, profile: defaultProfile(), coachSeen: null, coachApplied: [], mode: 'train', nutri: defaultNutri() };
 }
 
 // ---------- state ----------
@@ -573,6 +615,10 @@ function migrate(d) {
   if (!Array.isArray(d.coachApplied)) d.coachApplied = [];
   d.nutri = Object.assign(defaultNutri(), d.nutri || {});
   if (d.mode !== 'nutri') d.mode = 'train';
+  // Routines (v2.0): db.days stays the routine in use; other saved routines live in db.routines.
+  if (!Array.isArray(d.routines)) d.routines = [];
+  if (!d.routineId) d.routineId = uid();
+  if (!d.routineName) d.routineName = d.days.length ? `${d.days.length}-day routine` : 'My routine';
   d.sessions.sort((a, b) => a.date < b.date ? -1 : 1);
   d.v = 1;
   return d;
@@ -753,7 +799,12 @@ function vHome() {
 }
 
 function vWorkouts() {
-  return `<div class="scr"><h1 style="margin-top:8px">Workouts</h1><div class="sub" style="margin-bottom:14px">Your weekly split</div>
+  const more = db.routines.length;
+  return `<div class="scr"><h1 style="margin-top:8px">Workouts</h1>
+    <button class="card row" style="width:100%;margin:10px 0 14px;text-align:left" data-a="routines"><div class="grow" style="min-width:0">
+      <div class="cap">Routine in use</div><div class="ell" style="font-weight:700;font-size:17px;margin-top:2px">${esc(db.routineName)}</div>
+      <div class="sub" style="font-size:13px">${db.days.length} day${db.days.length === 1 ? '' : 's'}${more ? ` · ${more} more saved` : ''}</div></div>
+      <span style="color:var(--ac2);font-weight:600;font-size:14px">${more ? 'Switch' : 'Routines'} ›</span></button>
     <div class="list">${db.days.map(d => `<button class="card row" style="width:100%" data-a="openDay" data-id="${d.id}"><div class="grow">
       <div style="font-weight:600">${esc(d.name)}</div><div class="sub" style="font-size:13px">${esc(d.subtitle)}</div>
       <div class="amber" style="font-size:12px;margin-top:3px">${d.items.length} exercises</div></div><span class="chev">›</span></button>`).join('')}</div>
@@ -2063,8 +2114,8 @@ function vSettings() {
     <div class="card"><div class="muted" style="font-size:14px;margin-bottom:12px">Your log lives on this phone only. Export a backup now and then and save it to Files or iCloud Drive. Last backup: <b style="color:var(--t1)">${lb}</b>.</div>
       <div class="list"><button class="btn pri" data-a="exportData">Export backup</button><button class="btn" data-a="importData">Restore from backup…</button></div></div>
     <div class="cap" style="margin:22px 4px 8px">Routine</div>
-    <div class="card"><div class="muted" style="font-size:14px;margin-bottom:12px">Replace your days with the sample 5-day split. Your workout history is kept.</div>
-      <button class="btn" data-a="resetRoutine">Load the sample routine</button></div>
+    <div class="card"><div class="muted" style="font-size:14px;margin-bottom:12px">Keep several routines and switch between them — e.g. a 5-day and a 4-day plan. History and weights carry over.</div>
+      <button class="btn" data-a="routinesGo">Manage routines</button></div>
     <div class="cap" style="margin:22px 4px 8px">Coach profile</div>
     <div class="card"><div class="sub" style="margin-bottom:8px">Muscle groups to prioritise</div>
       <div class="chiprow wrap">${GROUPS.map(g => `<button class="chip sm ${db.profile.priorities.includes(g.k) ? 'on' : ''}" data-a="prioTog" data-v="${g.k}"><i class="key" style="background:${g.color}"></i>${g.name}</button>`).join('')}</div>
@@ -2261,13 +2312,40 @@ function sheet() {
         <div class="row" style="gap:8px"><button class="btn" data-a="closeSheet">Cancel</button><button class="btn pri" data-a="fCustomSave">Save</button></div>`;
       break;
     }
+    case 'routines': {
+      const daysTxt = ds => `${ds.length} day${ds.length === 1 ? '' : 's'} · ${ds.map(d => d.name.replace(/^Day \d+\s*[—-]\s*/, '')).join(' · ') || 'no days yet'}`;
+      b = `<h3>Routines</h3>
+        <div class="card" style="outline:2px solid var(--ac);margin-bottom:10px"><div class="row"><div class="grow" style="min-width:0"><div class="cap" style="color:var(--ac2)">✓ In use</div>
+          <div style="font-weight:700;margin-top:2px">${esc(db.routineName)}</div><div class="sub" style="font-size:12px">${esc(daysTxt(db.days))}</div></div>
+          <button class="btn sm" style="width:auto;padding:8px 12px" data-a="routineRename" data-id="${db.routineId}">Rename</button></div></div>
+        ${db.routines.map(r => `<div class="card" style="margin-bottom:10px"><div style="font-weight:700">${esc(r.name)}</div><div class="sub" style="font-size:12px;margin-bottom:10px">${esc(daysTxt(r.days))}</div>
+          <div class="row" style="gap:8px"><button class="btn sm pri" data-a="routineUse" data-id="${r.id}">Use this</button><button class="btn sm" data-a="routineRename" data-id="${r.id}">Rename</button><button class="btn sm danger" data-a="routineDel" data-id="${r.id}">Delete</button></div></div>`).join('')}
+        <button class="btn ghost" data-a="routineNew">＋ New routine</button>
+        <div class="faint" style="font-size:12px;text-align:center;margin-top:12px">All routines share your exercises and workout history, so weights and progress carry over when you switch.</div>`;
+      break;
+    }
+    case 'routinenew':
+      b = `<h3>New routine</h3>
+        <div class="field"><div class="cap">Name (optional)</div><input data-k="name" value="${esc(s.f.name)}" placeholder="e.g. 4-day plan" autocapitalize="words"></div>
+        <div class="cap" style="margin:4px 4px 8px">Start from</div><div class="list">
+        ${ROUTINE_TEMPLATES.map(t => `<button class="card" style="width:100%;text-align:left;padding:14px" data-a="routineCreate" data-v="tpl:${t.id}"><div style="font-weight:700">${esc(t.name)}</div><div class="sub" style="font-size:13px;margin-top:2px">${esc(t.blurb)}</div></button>`).join('')}
+        <button class="card" style="width:100%;text-align:left;padding:14px" data-a="routineCreate" data-v="copy"><div style="font-weight:700">A copy of “${esc(db.routineName)}”</div><div class="sub" style="font-size:13px;margin-top:2px">Same days and exercises, to tweak without touching the original</div></button>
+        <button class="card" style="width:100%;text-align:left;padding:14px" data-a="routineCreate" data-v="empty"><div style="font-weight:700">Empty</div><div class="sub" style="font-size:13px;margin-top:2px">Add your own days and exercises from the library</div></button></div>
+        <div class="faint" style="font-size:12px;text-align:center;margin-top:12px">The new routine is switched on right away. “${esc(db.routineName)}” is kept under Routines.</div>`;
+      break;
+    case 'rrename':
+      b = `<h3>Rename routine</h3><div class="field"><div class="cap">Name</div><input data-k="name" value="${esc(s.f.name)}" autocapitalize="words"></div>
+        <div class="row" style="gap:8px"><button class="btn" data-a="closeSheet">Cancel</button><button class="btn pri" data-a="routineRenameSave">Save</button></div>`;
+      break;
     case 'welcome':
       b = `<h3 style="font-size:22px">Welcome to Forge</h3>
         <div class="muted" style="font-size:14px;text-align:center;margin:-6px 0 16px">Log every set, see last time's numbers, and get told when to add weight.</div>
         <div class="field"><div class="cap">Your first name (optional)</div><input id="w-name" autocapitalize="words" autocomplete="given-name" placeholder="Used in the greeting"></div>
         <div class="cap" style="margin:4px 4px 8px">How do you want to start?</div>
         <div class="list"><button class="card" style="width:100%;text-align:left;padding:14px" data-a="welcomeGo" data-v="sample">
-            <div style="font-weight:700">Sample 5-day split</div><div class="sub" style="font-size:13px;margin-top:2px">Push · Pull · Legs · Push/Pull · Legs — edit or swap anything later</div></button>
+            <div style="font-weight:700">5-day split</div><div class="sub" style="font-size:13px;margin-top:2px">Push · Pull · Legs A · Push/Pull · Legs B</div></button>
+          <button class="card" style="width:100%;text-align:left;padding:14px" data-a="welcomeGo" data-v="four">
+            <div style="font-weight:700">4-day split</div><div class="sub" style="font-size:13px;margin-top:2px">Push · Legs · Pull · Full Body — one more rest day</div></button>
           <button class="card" style="width:100%;text-align:left;padding:14px" data-a="welcomeGo" data-v="empty">
             <div style="font-weight:700">Build my own</div><div class="sub" style="font-size:13px;margin-top:2px">Start empty and add days and exercises from the library</div></button></div>
         <div class="faint" style="font-size:12px;text-align:center;margin-top:14px">Everything stays on this phone. Export a backup now and then from Settings.</div>`;
@@ -2747,8 +2825,7 @@ const A = {
     fn: () => { db.sessions = db.sessions.filter(x => x.id !== d.id); save(); back(); } }),
   exportData: () => exportData(),
   importData: () => document.getElementById('import-file').click(),
-  resetRoutine: () => openSheet({ type: 'confirm', title: 'Reset routine?', msg: 'Your days and exercises are replaced by the sample 5-day split. Workout history is kept.', ok: 'Load sample', danger: true,
-    fn: () => { const s = seed(); db.exercises = s.exercises; db.days = s.days; save(); toast('Routine reset'); } }),
+  routinesGo: () => { tab('workouts'); openSheet({ type: 'routines' }); },
   eraseAll: () => openSheet({ type: 'confirm', title: 'Erase all data?', msg: 'Deletes every workout and edit on this phone. Export a backup first if you might want it.', ok: 'Erase everything', danger: true,
     fn: () => { db = seed(); save(); try { localStorage.removeItem(AI_KEY); } catch (e) {} ui.tab = 'home'; ui.view = { name: 'home' }; ui.stack = []; toast('All data erased'); } }),
   // effort & warm-up during a workout
@@ -2860,10 +2937,53 @@ const A = {
   fDel: () => { const s = ui.sheet, day = nDay(s.day); day.entries = day.entries.filter(x => x.id !== s.entryId); ui.sheet = null; save(); render(); },
   // nutrition: custom & saved foods
   nCustom: () => { const s = ui.view; openSheet({ type: 'fcustom', f: { name: s.q || '', brand: '', serving: '1 serving', grams: '', kcal: '', p: '', c: '', fat: '' }, meal: s.meal, day: s.day }); },
+  routines: () => openSheet({ type: 'routines' }),
+  routineUse: d => {
+    if (db.active) { toast('Finish or discard the workout in progress first'); return; }
+    const i = db.routines.findIndex(r => r.id === d.id);
+    if (i < 0) return;
+    const r = db.routines.splice(i, 1)[0];
+    db.routines.push({ id: db.routineId, name: db.routineName, days: db.days });
+    db.routineId = r.id; db.routineName = r.name; db.days = r.days;
+    ui.sheet = null; save(); render(); toast(`Now using ${r.name}`);
+  },
+  routineNew: () => {
+    if (db.active) { toast('Finish or discard the workout in progress first'); return; }
+    openSheet({ type: 'routinenew', f: { name: '' }, back: ui.sheet });
+  },
+  routineCreate: d => {
+    const s = ui.sheet, typed = (s.f.name || '').trim(), t = d.v.startsWith('tpl:') ? tplById(d.v.slice(4)) : null;
+    let days, name;
+    if (t) { days = buildDays(t, db.exercises); name = t.name; }
+    else if (d.v === 'copy') {   // fresh ids so the two routines never share a day
+      days = db.days.map(x => ({ ...x, id: uid(), warmup: x.warmup.map(w => ({ ...w, id: uid() })), items: x.items.map(it => ({ ...it, id: uid() })) }));
+      name = `Copy of ${db.routineName}`;
+    } else { days = []; name = 'New routine'; }
+    db.routines.push({ id: db.routineId, name: db.routineName, days: db.days });
+    db.routineId = uid(); db.routineName = typed || name; db.days = days;
+    ui.sheet = null; save(); tab('workouts'); toast(`Created ${db.routineName} — switched to it`);
+  },
+  routineRename: d => {
+    const r = d.id === db.routineId ? { name: db.routineName } : db.routines.find(x => x.id === d.id);
+    if (r) openSheet({ type: 'rrename', id: d.id, f: { name: r.name }, back: ui.sheet });
+  },
+  routineRenameSave: () => {
+    const s = ui.sheet, name = (s.f.name || '').trim();
+    if (!name) { toast('Give the routine a name'); return; }
+    if (s.id === db.routineId) db.routineName = name; else { const r = db.routines.find(x => x.id === s.id); if (r) r.name = name; }
+    save(); ui.sheet = { type: 'routines' }; render();
+  },
+  routineDel: d => {
+    const r = db.routines.find(x => x.id === d.id);
+    if (!r) return;
+    openSheet({ type: 'confirm', title: `Delete ${r.name}?`, msg: 'Removes this routine’s days. Your exercises and workout history are kept.', ok: 'Delete routine', danger: true,
+      fn: () => { db.routines = db.routines.filter(x => x.id !== d.id); save(); toast('Routine deleted'); } });
+  },
   welcomeGo: d => {
     const el = document.getElementById('w-name');
     db.profile.name = el ? el.value.trim() : '';
-    if (d.v === 'empty') { db.exercises = {}; db.days = []; }
+    if (d.v === 'empty') { db.exercises = {}; db.days = []; db.routineName = 'My routine'; }
+    if (d.v === 'four') { const t = tplById('plf4'); db.exercises = {}; db.days = buildDays(t, db.exercises); db.routineName = t.name; }
     delete db.welcome; ui.sheet = null; save(); render();
     if (d.v === 'empty') tab('workouts');
   },
