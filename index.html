@@ -195,7 +195,7 @@ h1{font-size:30px;font-weight:700;margin:4px 0;letter-spacing:-.4px}
 
 // ---------- constants & helpers ----------
 const KEY = 'forge.v1';
-const APP_VERSION = '1.5 · scan & photo';   // shown in Settings so you can confirm the phone has the latest upload
+const APP_VERSION = '1.9 · fist measurements';   // shown in Settings so you can confirm the phone has the latest upload
 const EQ = { barbell: 'Barbell', dbSide: 'Dumbbell (per side)', dbTotal: 'Dumbbell (total)', machine: 'Machine', cable: 'Cable', bw: 'Bodyweight' };
 const PLATES = [45, 35, 25, 10, 5, 2.5];
 const uid = () => (crypto.randomUUID ? crypto.randomUUID().slice(0, 13) : Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
@@ -232,7 +232,7 @@ const CH = { grid: '#2c2c2a', base: '#383835', muted: '#898781', surface: '#1B1B
 const RANGES = [['1m', '1M', 30], ['3m', '3M', 91], ['6m', '6M', 182], ['all', 'All', null]];
 const EFF = { easy: 'Easy', good: 'Good', hard: 'Hard' };
 const PROBLEMS = [['neck', 'Neck'], ['shoulders', 'Shoulders'], ['lowerBack', 'Lower back'], ['kneesHips', 'Knees / hips']];
-const defaultProfile = () => ({ priorities: ['chest', 'shoulders', 'quads', 'hamstrings', 'glutes'], problems: ['neck'] });
+const defaultProfile = () => ({ name: '', priorities: [], problems: [] });
 const defaultNutri = () => ({ profile: null, targets: null, auto: true, foods: {}, days: {}, recent: [] });
 // Weekly hard-set target range per muscle (priority muscles get +3 on the low end).
 const VOL = { chest: [10, 20], frontDelt: [4, 14], sideDelt: [8, 20], rearDelt: [6, 16], lats: [10, 20], upperBack: [10, 20], traps: [4, 14],
@@ -301,9 +301,148 @@ const CATALOG = [
   { name: 'Cable Woodchop', prim: 'obliques', sec: ['core'], equip: 'cable', sets: 3, rm: [10, 12], rest: 60, setup: 'Reps per side' },
   { name: 'Cable External Rotation', prim: 'rotatorCuff', sec: ['rearDelt'], equip: 'cable', sets: 2, rm: [12, 15], rest: 60, setup: 'Light — reps per arm' }
 ];
+// Built-in exercise library for the Add panel: the coach catalog plus common gym lifts.
+// Row: name | main muscle | also works | equipment | sets | min reps | max reps | rest s | setup note
+const LIBRARY = (() => {
+  const rows = `
+Barbell Bench Press|chest|frontDelt triceps|barbell|3|5|8|180
+Incline Barbell Bench Press|chest|frontDelt triceps|barbell|3|6|10|150
+Decline Barbell Bench Press|chest|triceps|barbell|3|6|10|150
+DB Bench Press|chest|frontDelt triceps|dbSide|3|8|12|120
+Incline DB Press|chest|frontDelt triceps|dbSide|3|8|12|120
+Decline DB Press|chest|triceps|dbSide|3|8|12|120
+Smith Machine Bench Press|chest|frontDelt triceps|barbell|3|8|12|120
+Smith Machine Incline Press|chest|frontDelt triceps|barbell|3|8|12|120
+Incline Machine Press|chest|frontDelt triceps|machine|3|8|12|120
+Pec Deck|chest|frontDelt|machine|3|12|15|75
+DB Fly|chest|frontDelt|dbSide|3|10|15|75
+Incline DB Fly|chest|frontDelt|dbSide|3|10|15|75
+High-to-Low Cable Crossover|chest||cable|3|12|15|75
+Push-Up|chest|triceps frontDelt core|bw|3|10|20|90
+Chest Dip|chest|triceps frontDelt|bw|3|6|12|150
+Landmine Press|frontDelt|chest triceps|barbell|3|8|12|90|Reps per arm
+Overhead Barbell Press|frontDelt|sideDelt triceps|barbell|3|5|8|180
+Seated DB Shoulder Press|frontDelt|sideDelt triceps|dbSide|3|8|12|120
+Arnold Press|frontDelt|sideDelt triceps|dbSide|3|8|12|120
+Machine Shoulder Press|frontDelt|sideDelt triceps|machine|3|8|12|120
+Smith Machine Shoulder Press|frontDelt|sideDelt triceps|barbell|3|8|12|120
+DB Lateral Raise|sideDelt||dbSide|3|12|20|75
+Cable Lateral Raise|sideDelt||cable|3|12|15|60|Reps per arm
+Cable Upright Row|sideDelt|traps|cable|3|10|15|75
+DB Rear Delt Fly|rearDelt|upperBack|dbSide|3|12|20|75
+Cable Rear Delt Fly|rearDelt|upperBack|cable|3|12|15|60
+Cable Front Raise|frontDelt||cable|2|10|15|60
+Band Pull-Apart|rearDelt|upperBack rotatorCuff|bw|2|15|25|45
+Side-Lying DB External Rotation|rotatorCuff|rearDelt|dbSide|2|12|15|60|Light — reps per arm
+Pull-Up|lats|biceps upperBack|bw|3|6|10|150
+Chin-Up|lats|biceps|bw|3|6|10|150
+Wide-Grip Lat Pulldown|lats|biceps upperBack|cable|3|8|12|120
+Neutral-Grip Lat Pulldown|lats|biceps upperBack|cable|3|8|12|120
+Single-Arm Cable Pulldown|lats||cable|3|10|12|75|Reps per arm
+Lat Pullover Machine|lats||machine|3|10|12|90
+DB Pullover|lats|chest|dbTotal|3|10|12|90
+Barbell Row|upperBack|lats biceps lowerBack|barbell|3|6|10|150
+Pendlay Row|upperBack|lats biceps lowerBack|barbell|3|5|8|150
+T-Bar Row|upperBack|lats biceps|barbell|3|8|12|120
+Chest-Supported T-Bar Row|upperBack|lats rearDelt|machine|3|8|12|120
+One-Arm DB Row|lats|upperBack biceps|dbSide|3|8|12|90|Reps per arm
+Chest-Supported DB Row|upperBack|lats rearDelt|dbSide|3|8|12|90
+Seal Row|upperBack|lats rearDelt|barbell|3|8|12|120
+Seated Machine Row|upperBack|lats biceps|machine|3|8|12|120
+Meadows Row|lats|upperBack|barbell|3|8|12|90|Reps per arm
+Wide-Grip Cable Row|upperBack|rearDelt lats|cable|3|10|12|90
+Inverted Row|upperBack|lats biceps|bw|3|8|15|90
+Barbell Shrug|traps||barbell|3|10|15|75
+DB Shrug|traps||dbSide|3|10|15|75
+Conventional Deadlift|lowerBack|glutes hamstrings quads traps|barbell|3|3|6|180
+Rack Pull|lowerBack|traps glutes upperBack|barbell|3|5|8|180
+Reverse Hyper|glutes|hamstrings lowerBack|machine|3|10|15|90
+Barbell Curl|biceps|forearms|barbell|3|8|12|90
+EZ-Bar Curl|biceps|forearms|barbell|3|8|12|90
+DB Curl|biceps|forearms|dbSide|3|8|12|75
+Incline DB Curl|biceps||dbSide|3|8|12|75
+Hammer Curl|biceps|forearms|dbSide|3|8|12|75
+Cable Curl|biceps|forearms|cable|3|10|15|75
+Bayesian Cable Curl|biceps||cable|3|10|15|60|Reps per arm
+Spider Curl|biceps||dbSide|3|10|12|75
+Concentration Curl|biceps||dbSide|2|10|12|60|Reps per arm
+Machine Curl|biceps||machine|3|10|12|75
+Reverse Curl|forearms|biceps|barbell|2|10|15|60
+Close-Grip Bench Press|triceps|chest frontDelt|barbell|3|6|10|150
+Skull Crusher|triceps||barbell|3|8|12|90
+JM Press|triceps|chest|barbell|3|8|12|90
+Rope Triceps Pushdown|triceps||cable|3|10|15|75
+Bar Triceps Pushdown|triceps||cable|3|10|15|75
+Single-Arm Cable Pushdown|triceps||cable|2|12|15|60|Reps per arm
+DB Overhead Triceps Extension|triceps||dbTotal|3|10|12|75
+Cable Triceps Kickback|triceps||cable|2|12|15|60|Reps per arm
+Triceps Dip|triceps|chest frontDelt|bw|3|8|12|120
+Machine Triceps Extension|triceps||machine|3|10|12|75
+Reverse Wrist Curl|forearms||dbSide|2|12|15|60
+Farmer's Carry|forearms|traps core|dbSide|3|30|45|90|Reps = seconds walked
+Dead Hang|forearms|lats|bw|2|30|60|60|Reps = seconds held
+Back Squat|quads|glutes adductors lowerBack|barbell|3|5|8|180
+Front Squat|quads|glutes core|barbell|3|5|8|180
+Smith Machine Squat|quads|glutes|barbell|3|8|12|150
+Leg Press|quads|glutes adductors|machine|3|8|12|150
+Single-Leg Leg Press|quads|glutes|machine|3|10|12|90|Reps per leg
+Pendulum Squat|quads|glutes|machine|3|8|12|150
+Belt Squat|quads|glutes adductors|machine|3|8|12|150
+Leg Extension|quads||machine|3|10|15|75
+Bulgarian Split Squat|quads|glutes adductors|dbSide|3|8|12|90|Reps per leg
+Walking Lunge|quads|glutes|dbSide|3|10|12|90|Reps per leg
+Reverse Lunge|quads|glutes|dbSide|3|8|12|90|Reps per leg
+Step-Up|quads|glutes|dbSide|3|8|12|90|Reps per leg
+Sissy Squat|quads||bw|2|10|15|75
+Romanian Deadlift|hamstrings|glutes lowerBack|barbell|3|6|10|150
+DB Romanian Deadlift|hamstrings|glutes|dbSide|3|8|12|120
+Single-Leg RDL|hamstrings|glutes|dbSide|3|8|12|90|Reps per leg
+Stiff-Leg Deadlift|hamstrings|glutes lowerBack|barbell|3|6|10|150
+Lying Leg Curl|hamstrings||machine|3|10|12|90
+Standing Single-Leg Curl|hamstrings||machine|3|10|12|75|Reps per leg
+Nordic Curl|hamstrings||bw|3|5|8|120
+Glute-Ham Raise|hamstrings|glutes|bw|3|6|10|120
+Cable Pull-Through|glutes|hamstrings|cable|3|12|15|75
+Kettlebell Swing|glutes|hamstrings core|dbTotal|3|15|20|90
+Barbell Hip Thrust|glutes|hamstrings|barbell|3|8|12|120
+Hip Thrust Machine|glutes|hamstrings|machine|3|8|12|120
+Glute Bridge|glutes|hamstrings|barbell|3|10|15|90
+Sumo Deadlift|glutes|adductors hamstrings quads lowerBack|barbell|3|3|6|180
+DB Sumo Squat|glutes|adductors quads|dbTotal|3|10|15|90
+Hip Abduction Machine|glutes||machine|3|12|20|60
+Cable Hip Abduction|glutes||cable|3|12|15|60|Reps per leg
+Hip Adduction Machine|adductors||machine|3|12|15|60
+Standing Calf Raise|calves||machine|3|10|15|75
+Seated Calf Raise|calves||machine|3|12|20|60
+Smith Machine Calf Raise|calves||barbell|3|10|15|75
+Single-Leg DB Calf Raise|calves||dbSide|3|10|15|60|Reps per leg
+Donkey Calf Raise|calves||machine|3|10|15|75
+Hanging Leg Raise|core|obliques|bw|3|10|15|60
+Hanging Knee Raise|core||bw|3|12|20|60
+Captain's Chair Leg Raise|core||bw|3|10|15|60
+Ab Wheel Rollout|core||bw|3|8|12|60
+Plank|core||bw|3|30|60|60|Reps = seconds held
+Side Plank|obliques|core|bw|2|30|45|45|Reps = seconds each side
+Hollow Body Hold|core||bw|3|20|40|45|Reps = seconds held
+Decline Sit-Up|core||bw|3|10|15|60
+Machine Crunch|core||machine|3|12|15|60
+Dead Bug|core||bw|3|8|12|45|Reps per side
+Russian Twist|obliques|core|dbTotal|3|10|15|45|Reps per side
+Suitcase Carry|obliques|forearms core|dbSide|3|30|45|60|Reps = seconds each side`;
+  const seen = new Set(), out = [];
+  const add = x => { const k = x.name.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push(x); } };
+  CATALOG.forEach(add);
+  rows.trim().split('\n').forEach(line => {
+    const [name, prim, sec, equip, sets, lo, hi, rest, setup] = line.split('|');
+    add({ name, prim, sec: sec ? sec.split(' ') : [], equip, sets: +sets, rm: [+lo, +hi], rest: +rest, setup: setup || '' });
+  });
+  return out;
+})();
+const PICK_GROUPS = [...GROUPS.map(g => [g.k, g.name]), ['core', 'Core']];
+const pickGroup = prim => (groupOf(prim) || { k: 'core' }).k;
 const DRILLS = [
   { id: 'chin', name: 'Chin tucks', dose: '2 × 10, 3-sec hold', tags: ['neck'], why: 'Strengthens the deep neck muscles so the upper traps stop doing their job.' },
-  { id: 'utrap', name: 'Upper-trap stretch', dose: '2 × 30 s each side, extra on the left', tags: ['neck'], why: 'Targets the tight left side of your neck directly.' },
+  { id: 'utrap', name: 'Upper-trap stretch', dose: '2 × 30 s each side, extra on the tighter side', tags: ['neck'], why: 'Goes straight at the muscle behind most neck tightness.' },
   { id: 'levator', name: 'Levator scapulae stretch', dose: '2 × 30 s each side', tags: ['neck'], why: 'This muscle often feels like neck tightness running down to the shoulder blade.' },
   { id: 'tspine', name: 'Thoracic extensions on a bench or roller', dose: '2 × 8', tags: ['neck', 'press'], why: 'A stiff upper back pushes the head forward; also helps overhead pressing.' },
   { id: 'pullapart', name: 'Band pull-aparts', dose: '2 × 15', tags: ['neck', 'press'], why: 'Gets the mid-back working so the upper traps can relax.' },
@@ -334,6 +473,7 @@ const I = {
 };
 
 // ---------- default routine ----------
+// A fresh install starts with this sample routine (or empty, picked on the welcome screen).
 function seed() {
   const exercises = {}, byName = {}, days = [];
   const ex = (name, muscle, equip, setup = '', rest = 120) => {
@@ -343,67 +483,67 @@ function seed() {
     byName[name] = id;
     return id;
   };
-  // [exerciseId, sets, repMin, repMax, plannedWeight]
+  // [exerciseId, sets, repMin, repMax]
   const day = (name, subtitle, items) => days.push({ id: uid(), name, subtitle, warmup: [],
-    items: items.map(([exId, sets, a, b, start]) => ({ id: uid(), exId, sets, repMin: a, repMax: b, rest: null, start: start ?? null })) });
+    items: items.map(([exId, sets, a, b]) => ({ id: uid(), exId, sets, repMin: a, repMax: b, rest: null, start: null })) });
 
   day('Day 1 — Push', 'Chest / Shoulders / Triceps', [
-    [ex('Incline Dumbbell Press', 'Chest', 'dbSide', 'Incline 45°', 150), 3, 6, 10, 55],
-    [ex('Lateral Raise', 'Shoulders', 'dbSide', 'DB or cable · slow', 75), 4, 12, 15, 25],
-    [ex('Flat DB Press', 'Chest', 'dbSide', '', 150), 3, 6, 10, 60],
-    [ex('Seated Shoulder Press', 'Shoulders', 'dbSide', '', 150), 3, 6, 10, 35],
-    [ex('Cable Fly / Pec Deck', 'Chest', 'cable', 'Cable 22.5 · Pec deck 45', 90), 3, 12, 15],
-    [ex('Skullcrusher', 'Triceps', 'barbell', '', 90), 3, 10, 12, 22.5],
-    [ex('Triceps Pulldown', 'Triceps', 'cable', '', 75), 3, 8, 12, 47.5]]);
+    [ex('Incline Dumbbell Press', 'Chest', 'dbSide', 'Incline 45°', 150), 3, 6, 10],
+    [ex('Lateral Raise', 'Shoulders', 'dbSide', 'DB or cable · slow', 75), 4, 12, 15],
+    [ex('Flat DB Press', 'Chest', 'dbSide', '', 150), 3, 6, 10],
+    [ex('Seated Shoulder Press', 'Shoulders', 'dbSide', '', 150), 3, 6, 10],
+    [ex('Cable Fly / Pec Deck', 'Chest', 'cable', '', 90), 3, 12, 15],
+    [ex('Skullcrusher', 'Triceps', 'barbell', '', 90), 3, 10, 12],
+    [ex('Triceps Pulldown', 'Triceps', 'cable', '', 75), 3, 8, 12]]);
   day('Day 2 — Pull', 'Back / Rear Delts / Biceps', [
-    [ex('Lat Pulldown', 'Back', 'machine', '39.5 / 110', 150), 3, 6, 10],
-    [ex('One-Arm Row', 'Back', 'dbSide', '', 120), 3, 6, 10, 75],
-    [ex('Deadlift', 'Back', 'barbell', 'Hex bar w/ 50s', 180), 2, 6, 10],
-    [ex('CG Lat Pulldown', 'Back', 'machine', 'Close grip', 90), 3, 8, 12, 100],
-    [ex('Chest-Supported / Cable Row', 'Back', 'machine', '', 120), 3, 8, 12, 140],
-    [ex('Rear Delts', 'Rear delts', 'machine', '', 75), 3, 12, 15, 30],
-    [ex('Cable Curl', 'Biceps', 'cable', '', 75), 3, 10, 12, 25],
-    [ex('Incline Hammer Curl', 'Biceps', 'dbSide', 'Incline 45°', 75), 2, 10, 12, 22.5]]);
+    [ex('Lat Pulldown', 'Back', 'machine', '', 150), 3, 6, 10],
+    [ex('One-Arm Row', 'Back', 'dbSide', '', 120), 3, 6, 10],
+    [ex('Deadlift', 'Back', 'barbell', '', 180), 2, 6, 10],
+    [ex('CG Lat Pulldown', 'Back', 'machine', 'Close grip', 90), 3, 8, 12],
+    [ex('Chest-Supported / Cable Row', 'Back', 'machine', '', 120), 3, 8, 12],
+    [ex('Rear Delts', 'Rear delts', 'machine', '', 75), 3, 12, 15],
+    [ex('Cable Curl', 'Biceps', 'cable', '', 75), 3, 10, 12],
+    [ex('Incline Hammer Curl', 'Biceps', 'dbSide', 'Incline 45°', 75), 2, 10, 12]]);
   day('Day 3 — Legs A', 'Quads / Glutes / Hamstrings', [
-    [ex('Single-Leg RDL', 'Hamstrings', 'dbSide', '', 90), 3, 8, 12, 25],
-    [ex('Front Squat', 'Quads', 'barbell', 'Bar + 35s', 180), 3, 6, 10, 115],
-    [ex('Leg Curls', 'Hamstrings', 'machine', '', 90), 3, 10, 12, 100],
-    [ex('Walking Lunges', 'Quads', 'dbSide', '10–12 each leg', 120), 3, 10, 12, 30],
-    [ex('Abductors', 'Glutes', 'machine', '', 75), 2, 10, 12, 100],
-    [ex('Adductors', 'Adductors', 'machine', '', 75), 3, 10, 12, 55],
-    [ex('Leg Extensions', 'Quads', 'machine', '', 90), 3, 10, 12, 90],
-    [ex('Hip Thrusts', 'Glutes', 'barbell', '', 120), 3, 10, 12, 70],
-    [ex('Standing Calf Raise', 'Calves', 'machine', '', 75), 3, 12, 15, 220],
+    [ex('Single-Leg RDL', 'Hamstrings', 'dbSide', '', 90), 3, 8, 12],
+    [ex('Front Squat', 'Quads', 'barbell', '', 180), 3, 6, 10],
+    [ex('Leg Curls', 'Hamstrings', 'machine', '', 90), 3, 10, 12],
+    [ex('Walking Lunges', 'Quads', 'dbSide', '10–12 each leg', 120), 3, 10, 12],
+    [ex('Abductors', 'Glutes', 'machine', '', 75), 2, 10, 12],
+    [ex('Adductors', 'Adductors', 'machine', '', 75), 3, 10, 12],
+    [ex('Leg Extensions', 'Quads', 'machine', '', 90), 3, 10, 12],
+    [ex('Hip Thrusts', 'Glutes', 'barbell', '', 120), 3, 10, 12],
+    [ex('Standing Calf Raise', 'Calves', 'machine', '', 75), 3, 12, 15],
     [ex('Weighted Abs / Hanging Leg Raises', 'Core', 'bw', '', 60), 3, 15, 20]]);
   day('Day 4 — Push/Pull', 'Push / Pull hybrid', [
-    [ex('Incline Dumbbell Press', 'Chest', 'dbSide', 'Incline 45°', 150), 3, 6, 10, 55],
-    [ex('Lateral Raise (Cable)', 'Shoulders', 'cable', '', 75), 4, 10, 12, 25],
-    [ex('Dumbbell Press', 'Chest', 'dbSide', '', 150), 3, 6, 10, 60],
-    [ex('Shoulder Press', 'Shoulders', 'dbSide', '', 150), 3, 8, 12, 35],
-    [ex('Cable Fly / Pec Deck', 'Chest', 'cable', 'Cable 22.5 · Pec deck 45', 90), 2, 8, 12, 45],
-    [ex('Weighted Pull-Ups / Lat Pulldown', 'Back', 'machine', '', 150), 2, 6, 10, 39.5],
-    [ex('Bent-Over Rows', 'Back', 'barbell', '', 150), 3, 8, 10, 80],
-    [ex('Pulldowns', 'Back', 'machine', '', 120), 2, 8, 12, 120],
-    [ex('Machine Row', 'Back', 'machine', '', 120), 2, 8, 12, 150],
-    [ex('Shrugs', 'Traps', 'dbSide', '', 90), 2, 10, 12, 53],
-    [ex('Cable Arrow Pulls', 'Rear delts', 'cable', '', 75), 2, 12, 15, 35],
-    [ex('Face Pulls', 'Rear delts', 'cable', '', 75), 3, 8, 12, 120],
-    [ex('Incline Curls', 'Biceps', 'dbSide', 'Incline 45°', 75), 3, 8, 10, 20],
-    [ex('DB Overhead Triceps Extension', 'Triceps', 'dbSide', '', 75), 2, 10, 12, 20],
-    [ex('Hammer Curls', 'Biceps', 'dbSide', '', 75), 2, 8, 12, 40],
-    [ex('Triceps Rope Pushdown', 'Triceps', 'cable', '', 75), 3, 10, 12, 45]]);
-  day('Day 6 — Legs B', 'Quads / Glutes / Hamstrings', [
+    [ex('Incline Dumbbell Press', 'Chest', 'dbSide', 'Incline 45°', 150), 3, 6, 10],
+    [ex('Lateral Raise (Cable)', 'Shoulders', 'cable', '', 75), 4, 10, 12],
+    [ex('Dumbbell Press', 'Chest', 'dbSide', '', 150), 3, 6, 10],
+    [ex('Shoulder Press', 'Shoulders', 'dbSide', '', 150), 3, 8, 12],
+    [ex('Cable Fly / Pec Deck', 'Chest', 'cable', '', 90), 2, 8, 12],
+    [ex('Weighted Pull-Ups / Lat Pulldown', 'Back', 'machine', '', 150), 2, 6, 10],
+    [ex('Bent-Over Rows', 'Back', 'barbell', '', 150), 3, 8, 10],
+    [ex('Pulldowns', 'Back', 'machine', '', 120), 2, 8, 12],
+    [ex('Machine Row', 'Back', 'machine', '', 120), 2, 8, 12],
+    [ex('Shrugs', 'Traps', 'dbSide', '', 90), 2, 10, 12],
+    [ex('Cable Arrow Pulls', 'Rear delts', 'cable', '', 75), 2, 12, 15],
+    [ex('Face Pulls', 'Rear delts', 'cable', '', 75), 3, 8, 12],
+    [ex('Incline Curls', 'Biceps', 'dbSide', 'Incline 45°', 75), 3, 8, 10],
+    [ex('DB Overhead Triceps Extension', 'Triceps', 'dbSide', '', 75), 2, 10, 12],
+    [ex('Hammer Curls', 'Biceps', 'dbSide', '', 75), 2, 8, 12],
+    [ex('Triceps Rope Pushdown', 'Triceps', 'cable', '', 75), 3, 10, 12]]);
+  day('Day 5 — Legs B', 'Quads / Glutes / Hamstrings', [
     [ex('Step-Ups', 'Quads', 'bw', '', 90), 2, 10, 10],
-    [ex('Box Jumps', 'Quads', 'bw', '20 in box', 90), 3, 10, 10],
-    [ex('Romanian Deadlift', 'Hamstrings', 'barbell', 'Bar + 35s', 180), 3, 8, 10, 115],
-    [ex('Bulgarian Split Squat', 'Quads', 'dbSide', 'Each leg', 150), 3, 6, 10, 45],
-    [ex('Leg Curl (Seated or Lying)', 'Hamstrings', 'machine', '', 90), 3, 10, 12, 100],
-    [ex('Leg Press', 'Quads', 'machine', '', 180), 3, 6, 10, 240],
-    [ex('Crab Walk', 'Glutes', 'bw', 'Red band', 60), 3, 12, 12],
-    [ex('Adductor', 'Adductors', 'machine', '', 75), 2, 10, 12, 55],
-    [ex('Leg Extensions', 'Quads', 'machine', '', 90), 2, 10, 12, 100],
-    [ex('Hip Thrusts', 'Glutes', 'barbell', '', 120), 3, 10, 12, 70],
-    [ex('Standing Calf Raise', 'Calves', 'machine', '', 75), 3, 12, 15, 200],
+    [ex('Box Jumps', 'Quads', 'bw', '', 90), 3, 10, 10],
+    [ex('Romanian Deadlift', 'Hamstrings', 'barbell', '', 180), 3, 8, 10],
+    [ex('Bulgarian Split Squat', 'Quads', 'dbSide', 'Each leg', 150), 3, 6, 10],
+    [ex('Leg Curl (Seated or Lying)', 'Hamstrings', 'machine', '', 90), 3, 10, 12],
+    [ex('Leg Press', 'Quads', 'machine', '', 180), 3, 6, 10],
+    [ex('Crab Walk', 'Glutes', 'bw', '', 60), 3, 12, 12],
+    [ex('Adductor', 'Adductors', 'machine', '', 75), 2, 10, 12],
+    [ex('Leg Extensions', 'Quads', 'machine', '', 90), 2, 10, 12],
+    [ex('Hip Thrusts', 'Glutes', 'barbell', '', 120), 3, 10, 12],
+    [ex('Standing Calf Raise', 'Calves', 'machine', '', 75), 3, 12, 15],
     [ex('Seated Calf Raise', 'Calves', 'machine', '', 75), 3, 12, 15],
     [ex('Weighted Abs / Sit-Ups', 'Core', 'bw', '', 60), 3, 15, 20]]);
   return { v: 1, exercises, days, sessions: [], active: null, lastBackup: null, hideInstall: false, profile: defaultProfile(), coachSeen: null, coachApplied: [], mode: 'train', nutri: defaultNutri() };
@@ -428,7 +568,7 @@ function migrate(d) {
     if (!ex.prim) { const t = tagsFor(ex.name, ex.muscle); ex.prim = t.prim; ex.sec = t.sec; }
     if (!Array.isArray(ex.sec)) ex.sec = [];
   });
-  if (!d.profile) d.profile = defaultProfile();
+  d.profile = Object.assign(defaultProfile(), d.profile || {});   // fills new fields, keeps everything you set
   if (!('coachSeen' in d)) d.coachSeen = null;
   if (!Array.isArray(d.coachApplied)) d.coachApplied = [];
   d.nutri = Object.assign(defaultNutri(), d.nutri || {});
@@ -443,6 +583,7 @@ function load() {
     if (raw) { const d = JSON.parse(raw); if (d && d.exercises && Array.isArray(d.days)) return migrate(d); }
   } catch (e) { /* fall through to a fresh seed */ }
   const d = seed();
+  d.welcome = true;   // brand-new install: ask for a name and how to start
   try { localStorage.setItem(KEY, JSON.stringify(d)); } catch (e) {}
   return d;
 }
@@ -514,7 +655,20 @@ function render() {
   if (ui.resetScroll) { window.scrollTo(0, 0); ui.resetScroll = false; } else window.scrollTo(0, sy);
   if (ui.scrollSel) { ui.scrollSel = false; const el = app.querySelector('.setrow.sel'); if (el) el.scrollIntoView({ block: 'nearest' }); }
   document.body.style.overflow = (ui.sheet || ui.view.name === 'workout') ? 'hidden' : '';
+  if (ui.sheet && ui.sheet.type === 'picker') pickFilter();
   syncWake();
+}
+// Exercise picker: search words (name, muscle or equipment) AND the muscle-group chip.
+function pickFilter() {
+  const q = ((document.getElementById('pick-search') || {}).value || '').trim().toLowerCase(), words = q.split(/\s+/).filter(Boolean), g = (ui.sheet && ui.sheet.g) || 'all';
+  let any = false;
+  document.querySelectorAll('[data-sec]').forEach(sec => {
+    let n = 0;
+    sec.querySelectorAll('[data-pn]').forEach(el => { const show = (g === 'all' || el.dataset.g === g) && words.every(w => el.dataset.pn.includes(w)); el.hidden = !show; if (show) n++; });
+    sec.hidden = !n; if (n) any = true;
+  });
+  const none = document.getElementById('pick-none');
+  if (none) none.hidden = any;
 }
 
 function view() {
@@ -551,7 +705,7 @@ function vHome() {
   const d = todayDay(), a = db.active, now = new Date();
   let h = `<div class="scr"><div class="row" style="align-items:flex-start"><div class="grow">
     <div class="sub">${esc(now.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }))}</div>
-    <h1>Let's go, Oliver</h1></div>
+    <h1>Let's go${db.profile.name ? `, ${esc(db.profile.name)}` : ''}</h1></div>
     <button class="navbtn" data-a="go" data-v="settings" aria-label="Settings">${I.gear}</button></div>
     <div class="list" style="margin-top:12px">`;
   if (!standalone && !db.hideInstall) {
@@ -1273,7 +1427,7 @@ function vCoach() {
 
   h += vCoachNutrition(A.nutri);
   h += `<div class="cap sec-h">Mobility & stability</div>`;
-  if (db.profile.problems.includes('neck')) h += `<div class="card muted" style="font-size:13px;margin-bottom:10px">For the tightness on the left side of your neck: go gentle, never stretch into pain, and keep your neck neutral on shrugs and deadlifts. If it doesn't ease up, get it looked at by a physio.</div>`;
+  if (db.profile.problems.includes('neck')) h += `<div class="card muted" style="font-size:13px;margin-bottom:10px">For neck tightness: go gentle, never stretch into pain, and keep your neck neutral on shrugs and deadlifts. If it doesn't ease up, get it looked at by a physio.</div>`;
   h += `<div class="list">${A.drills.map(({ d, reason }) => {
     const inDays = db.days.filter(x => (x.warmup || []).some(w => w.drill === d.id));
     return `<div class="card"><div class="row"><span class="grow" style="font-weight:600">${esc(d.name)}</span><span class="faint" style="font-size:12px;text-align:right">${esc(d.dose)}</span></div>
@@ -1662,6 +1816,31 @@ const AI_HOWTO = `Snap a nutrition label or a meal and Claude (Anthropic’s AI)
   1. Sign in at <b style="color:var(--t1)">console.anthropic.com</b> and add a little credit (setting a monthly limit there is a good idea).<br>
   2. Open <b style="color:var(--t1)">API keys → Create key</b> and copy it.<br>
   3. Paste it here. It stays on this phone only and is never put in a backup.`;
+// Fist size, in inches: { w: knuckle width, l: length, h: height } — l and h optional.
+// Only asked for the first time a fist is used for scale. (v1.8 stored a bare width number.)
+const FIST_DIMS = [
+  ['w', 'Knuckle width', 'Across the knuckles, from the outside of your index-finger knuckle to the outside of your pinky knuckle.', [2, 6], 'across the knuckles'],
+  ['l', 'Fist length', 'From the front edge of your curled fingers straight back to the crease of your wrist.', [2.5, 7], 'long from the front of the curled fingers to the wrist crease'],
+  ['h', 'Fist height', 'From the table up to the top of your highest knuckle.', [1.5, 5], 'tall from the table to the top knuckle'],
+];
+const FIST_PRESETS = [['Small', 3, 4, 2.6], ['Medium', 3.4, 4.4, 2.9], ['Large', 3.8, 4.8, 3.2], ['Extra large', 4.2, 5.2, 3.5]];
+const fistOf = v => v == null ? null : typeof v === 'number' ? { w: v } : v;
+const inCm = inch => `${r1(inch)} in (${r1(inch * 2.54)} cm)`;
+const fistShort = v => { const f = fistOf(v); return FIST_DIMS.filter(([k]) => f[k]).map(([k]) => r1(f[k])).join(' × ') + ' in'; };
+const fistPrompt = v => { const f = fistOf(v); return FIST_DIMS.filter(([k]) => f[k]).map(([k, , , , say]) => `${inCm(f[k])} ${say}`).join(', '); };
+// Two little diagrams: from above (width & length) and from the side (height).
+const FIST_SVG = `<svg viewBox="0 0 230 92" width="100%" style="max-width:300px;display:block;margin:0 auto 12px" aria-hidden="true">
+  <defs><marker id="fa" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L8 4L0 8z" fill="var(--ac2)"/></marker></defs>
+  <g fill="var(--s2)" stroke="var(--t2)" stroke-width="1.5"><rect x="38" y="70" width="34" height="14" rx="4"/><rect x="20" y="22" width="70" height="50" rx="16"/></g>
+  <g fill="none" stroke="var(--t3)" stroke-width="1.2"><circle cx="32" cy="30" r="5"/><circle cx="47" cy="28" r="5"/><circle cx="63" cy="28" r="5"/><circle cx="78" cy="30" r="5"/></g>
+  <g stroke="var(--ac2)" stroke-width="1.8" marker-start="url(#fa)" marker-end="url(#fa)"><line x1="22" y1="12" x2="88" y2="12"/><line x1="102" y1="22" x2="102" y2="80"/></g>
+  <g fill="var(--ac2)" font-size="11" font-weight="700" text-anchor="middle"><text x="55" y="9">1</text><text x="112" y="55">2</text><text x="141" y="58">3</text></g>
+  <text x="55" y="91" font-size="9" fill="var(--t3)" text-anchor="middle">from above</text>
+  <line x1="150" y1="78" x2="228" y2="78" stroke="var(--t3)" stroke-width="1.5"/>
+  <path d="M160 78 V52 Q160 40 172 40 H208 Q220 40 220 52 V78 Z" fill="var(--s2)" stroke="var(--t2)" stroke-width="1.5"/>
+  <line x1="150" y1="40" x2="150" y2="76" stroke="var(--ac2)" stroke-width="1.8" marker-start="url(#fa)" marker-end="url(#fa)"/>
+  <text x="190" y="91" font-size="9" fill="var(--t3)" text-anchor="middle">from the side</text>
+</svg>`;
 const aiKeyField = () => `<div class="field"><div class="cap">API key</div><input id="ai-key" type="password" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="sk-ant-…"></div>`;
 const SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.128.0/+esm';
 let sdkLoad = null;
@@ -1672,6 +1851,10 @@ const PHOTO_PROMPT = `You log food for a fitness app from one photo. The person 
 - Packaged product with no readable label: kind "packaged". Give typical values for one serving of that product.
 - Plate, bowl, or meal: kind "meal". Identify each component and estimate its portion from visual cues (plate size, utensils, hands). List each as a short item like "~150 g grilled chicken breast". Total the nutrition for everything shown as one serving, serving "1 plate" or "1 bowl", and a short name like "Chicken, rice & broccoli".
 - Not food: kind "not_food".
+
+For meals, two extra aids may be given:
+- Scale: the person's closed fist may be in the photo, resting knuckles-up on the table, with its measured width and possibly its length and height. Use it as a ruler — compare each food's footprint against the fist's width and length, and each food's height against the fist's height. When all three are given, treat the fist as a rounded block of those dimensions to judge volume; with only the width, an average adult fist (about 3.3 in / 8.5 cm across) is roughly 1 cup, so scale that by the size given. Then convert to grams with typical densities for that food. Mind perspective: things nearer the camera than the fist look bigger. Say in note what you scaled from. If no fist is visible, judge from the plate and utensils and say so in note.
+- Ingredients: if the person lists what's in the meal, trust that list over what you can see (hidden oil, butter, sauces, fillings), estimate an amount for each listed ingredient, and include each in items.
 
 Use "" for unknown text fields and 0 for unknown grams. confidence is high for a clearly read label and lower for estimates. note is one short sentence on anything worth double-checking, or "".`;
 const PHOTO_SCHEMA = {
@@ -1686,10 +1869,13 @@ const PHOTO_SCHEMA = {
     note: { type: 'string' },
   },
 };
+// Must run inside the tap's handler: iOS only opens the camera/photo picker from a user tap.
+function shootPhoto() { document.getElementById('photo-file').click(); }
 async function shrinkPhoto(file) {   // ≤1568 px JPEG: plenty for a label, and keeps the upload small
   const url = URL.createObjectURL(file);
   try {
-    const img = new Image(); img.src = url; await img.decode();
+    // onload rather than img.decode(): decode() can stall while the page isn't on screen (e.g. just back from the camera).
+    const img = await new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = url; });
     const k = Math.min(1, 1568 / Math.max(img.naturalWidth, img.naturalHeight)), cv = document.createElement('canvas');
     cv.width = Math.round(img.naturalWidth * k); cv.height = Math.round(img.naturalHeight * k);
     cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
@@ -1704,13 +1890,16 @@ async function readFoodPhoto(b64, ctx) {
     ctx.code && `It has barcode ${ctx.code}, which isn't in the food database, so it's most likely a packaged product — read its label if one is visible.`,
     ctx.name && `The product is probably "${ctx.name}".`,
     ctx.q && !/^\d+$/.test(ctx.q) && `They had searched for "${ctx.q}".`,
+    ctx.mode === 'meal' && 'This is a plate or bowl of food.',
+    ctx.ing && `They say it contains: ${ctx.ing}.`,
+    ctx.fist && `Their closed fist is in the photo for scale, resting knuckles-up; it measures ${fistPrompt(ctx.fist)}.`,
   ].filter(Boolean).join(' ');
   let msg;
   try {
     msg = await client.beta.messages.create({
       model: 'claude-opus-5-5', max_tokens: 16000,
       betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
-      output_config: { effort: 'low', format: { type: 'json_schema', schema: PHOTO_SCHEMA } },
+      output_config: { effort: ctx.mode === 'meal' ? 'medium' : 'low', format: { type: 'json_schema', schema: PHOTO_SCHEMA } },
       system: PHOTO_PROMPT,
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
@@ -1868,12 +2057,14 @@ function vCoachNutrition(NS) {
 function vSettings() {
   const lb = db.lastBackup ? new Date(db.lastBackup).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'never';
   return `<div class="scr"><div class="nav"><button class="navbtn" data-a="back" aria-label="Back">‹</button><span></span></div><h1>Settings</h1>
-    <div class="cap" style="margin:18px 4px 8px">Backup</div>
+    <div class="cap" style="margin:18px 4px 8px">You</div>
+    <div class="card"><div class="field" style="margin-bottom:0"><div class="cap">First name — shown in the greeting</div><input id="p-name" autocapitalize="words" autocomplete="given-name" placeholder="Optional" value="${esc(db.profile.name || '')}"></div></div>
+    <div class="cap" style="margin:22px 4px 8px">Backup</div>
     <div class="card"><div class="muted" style="font-size:14px;margin-bottom:12px">Your log lives on this phone only. Export a backup now and then and save it to Files or iCloud Drive. Last backup: <b style="color:var(--t1)">${lb}</b>.</div>
       <div class="list"><button class="btn pri" data-a="exportData">Export backup</button><button class="btn" data-a="importData">Restore from backup…</button></div></div>
     <div class="cap" style="margin:22px 4px 8px">Routine</div>
-    <div class="card"><div class="muted" style="font-size:14px;margin-bottom:12px">Put back the built-in 5-day routine. Your workout history is kept.</div>
-      <button class="btn" data-a="resetRoutine">Reset routine to default</button></div>
+    <div class="card"><div class="muted" style="font-size:14px;margin-bottom:12px">Replace your days with the sample 5-day split. Your workout history is kept.</div>
+      <button class="btn" data-a="resetRoutine">Load the sample routine</button></div>
     <div class="cap" style="margin:22px 4px 8px">Coach profile</div>
     <div class="card"><div class="sub" style="margin-bottom:8px">Muscle groups to prioritise</div>
       <div class="chiprow wrap">${GROUPS.map(g => `<button class="chip sm ${db.profile.priorities.includes(g.k) ? 'on' : ''}" data-a="prioTog" data-v="${g.k}"><i class="key" style="background:${g.color}"></i>${g.name}</button>`).join('')}</div>
@@ -1881,6 +2072,7 @@ function vSettings() {
       <div class="chiprow wrap">${PROBLEMS.map(([k, l]) => `<button class="chip sm ${db.profile.problems.includes(k) ? 'on' : ''}" data-a="probTog" data-v="${k}">${l}</button>`).join('')}</div></div>
     <div class="cap" style="margin:22px 4px 8px">Food photos</div>
     <div class="card">${aiKey() ? `<div class="muted" style="font-size:14px;margin-bottom:12px">✓ Claude API key saved on this phone (ends in <b style="color:var(--t1)">${esc(aiKey().slice(-4))}</b>). Tap 📷 Photo when adding food.</div>
+        ${db.profile.fist ? `<div class="row" style="margin-bottom:12px"><div class="grow muted" style="font-size:14px">✊ Fist size for meal photos: <b style="color:var(--t1)">${fistShort(db.profile.fist)}</b></div><button class="btn sm" style="width:auto;padding:8px 14px" data-a="fistEdit">Change</button></div>` : ''}
         <button class="btn" data-a="aiKeyDel">Remove key</button>`
       : `<div class="muted" style="font-size:14px;margin-bottom:12px">${AI_HOWTO}</div>${aiKeyField()}<button class="btn pri" data-a="aiKeySave">Save key</button>`}</div>
     <div class="cap" style="margin:22px 4px 8px">This device</div>
@@ -1950,13 +2142,25 @@ function sheet() {
       break;
     }
     case 'picker': {
-      const list = Object.values(db.exercises).sort((x, y) => x.name.localeCompare(y.name));
+      // Your exercises first, then the built-in library (minus anything you already have), by muscle group.
+      const mine = Object.values(db.exercises).sort((x, y) => x.name.localeCompare(y.name)), have = new Set(mine.map(e => e.name.toLowerCase()));
+      const lib = LIBRARY.map((x, i) => ({ x, i })).filter(({ x }) => !have.has(x.name.toLowerCase())), g = s.g || 'all';
+      const row = (a, id, name, prim, equip, tag) => {
+        const ml = MUSCLES[prim] || '', el = EQ[equip] || '';
+        return `<button class="card row" style="width:100%;padding:12px" data-a="${a}" data-id="${id}" data-pn="${esc(`${name} ${ml} ${el}`.toLowerCase())}" data-g="${pickGroup(prim)}">
+          <div class="grow" style="min-width:0"><div class="ell" style="font-weight:600">${esc(name)}</div><div class="sub" style="font-size:12px">${esc(ml)}${tag}</div></div>
+          <div class="faint" style="font-size:12px;text-align:right">${esc(el)}</div></button>`;
+      };
+      const sec = (title, rows) => rows.length ? `<div data-sec><div class="cap" style="margin:14px 4px 8px">${title}</div><div class="list">${rows.join('')}</div></div>` : '';
+      const libTag = x => ` · ${x.sets} × ${x.rm[0]}–${x.rm[1]}`;
       b = `<h3>${s.mode === 'swap' ? 'Swap exercise' : 'Add exercise'}</h3>
-        <input id="pick-search" type="search" placeholder="Search exercise library" autocomplete="off" autocorrect="off" spellcheck="false">
-        <button class="btn ghost" style="margin:10px 0" data-a="newEx">＋ New exercise</button>
-        <div class="sbody" data-keep="sbody-picker"><div class="list">${list.map(e => `<button class="card row" style="width:100%;padding:12px" data-a="pick" data-id="${e.id}" data-pn="${esc(e.name.toLowerCase())}">
-          <div class="grow"><div class="ell" style="font-weight:600">${esc(e.name)}</div><div class="sub" style="font-size:12px">${esc(MUSCLES[e.prim] || e.muscle || '')}</div></div>
-          <div class="faint" style="font-size:12px">${esc(EQ[e.equip] || '')}</div></button>`).join('')}</div></div>`;
+        <input id="pick-search" type="search" placeholder="Search ${mine.length + lib.length} exercises — name or muscle" autocomplete="off" autocorrect="off" spellcheck="false">
+        <div class="chiprow scroll" style="margin:10px -16px 0">${[['all', 'All'], ...PICK_GROUPS].map(([k, l]) => `<button class="chip sm ${g === k ? 'on' : ''}" data-a="pickG" data-v="${k}">${l}</button>`).join('')}</div>
+        <button class="btn ghost sm" style="margin:6px 0 4px" data-a="newEx">＋ Create a custom exercise</button>
+        <div class="sbody" data-keep="sbody-picker">
+          ${sec('Your exercises', mine.map(e => row('pick', e.id, e.name, e.prim, e.equip, '')))}
+          ${PICK_GROUPS.map(([k, l]) => sec(`Library · ${l}`, lib.filter(({ x }) => pickGroup(x.prim) === k).map(({ x, i }) => row('pickLib', i, x.name, x.prim, x.equip, libTag(x))))).join('')}
+          <div id="pick-none" class="faint" hidden style="text-align:center;padding:24px 0 8px;font-size:14px">No matches — tap “Create a custom exercise” above.</div></div>`;
       break;
     }
     case 'exform': {
@@ -2057,6 +2261,17 @@ function sheet() {
         <div class="row" style="gap:8px"><button class="btn" data-a="closeSheet">Cancel</button><button class="btn pri" data-a="fCustomSave">Save</button></div>`;
       break;
     }
+    case 'welcome':
+      b = `<h3 style="font-size:22px">Welcome to Forge</h3>
+        <div class="muted" style="font-size:14px;text-align:center;margin:-6px 0 16px">Log every set, see last time's numbers, and get told when to add weight.</div>
+        <div class="field"><div class="cap">Your first name (optional)</div><input id="w-name" autocapitalize="words" autocomplete="given-name" placeholder="Used in the greeting"></div>
+        <div class="cap" style="margin:4px 4px 8px">How do you want to start?</div>
+        <div class="list"><button class="card" style="width:100%;text-align:left;padding:14px" data-a="welcomeGo" data-v="sample">
+            <div style="font-weight:700">Sample 5-day split</div><div class="sub" style="font-size:13px;margin-top:2px">Push · Pull · Legs · Push/Pull · Legs — edit or swap anything later</div></button>
+          <button class="card" style="width:100%;text-align:left;padding:14px" data-a="welcomeGo" data-v="empty">
+            <div style="font-weight:700">Build my own</div><div class="sub" style="font-size:13px;margin-top:2px">Start empty and add days and exercises from the library</div></button></div>
+        <div class="faint" style="font-size:12px;text-align:center;margin-top:14px">Everything stays on this phone. Export a backup now and then from Settings.</div>`;
+      break;
     case 'bcmiss':
       b = s.err ? `<h3>Couldn’t look it up</h3><div class="muted" style="font-size:14px;margin-bottom:14px">Couldn’t reach the food database for barcode ${esc(s.code)} — check your connection.</div>
           <div class="list"><button class="btn pri" data-a="nBarcode" data-code="${esc(s.code)}">Try again</button><button class="btn" style="background:none;color:var(--t2)" data-a="closeSheet">Cancel</button></div>`
@@ -2067,8 +2282,49 @@ function sheet() {
       break;
     case 'aikey':
       b = `<h3>Turn on food photos</h3><div class="muted" style="font-size:14px;margin-bottom:14px">${AI_HOWTO}</div>${aiKeyField()}
-        <div class="row" style="gap:8px"><button class="btn" data-a="closeSheet">Cancel</button><button class="btn pri" data-a="aiKeySave">Save & take photo</button></div>`;
+        <div class="row" style="gap:8px"><button class="btn" data-a="closeSheet">Cancel</button><button class="btn pri" data-a="aiKeySave">Save key</button></div>`;
       break;
+    case 'phkind':
+      b = `<h3>What are you photographing?</h3><div class="list">
+        <button class="card" style="width:100%;text-align:left;padding:14px" data-a="phLabel"><div style="font-weight:700">🏷️ Nutrition label or package</div>
+          <div class="sub" style="font-size:13px;margin-top:2px">Reads the numbers straight off the label</div></button>
+        <button class="card" style="width:100%;text-align:left;padding:14px" data-a="phMeal"><div style="font-weight:700">🍽️ A plate of food</div>
+          <div class="sub" style="font-size:13px;margin-top:2px">Estimates the portions — add the ingredients and your fist for a better guess</div></button></div>
+        <button class="btn" style="background:none;color:var(--t2);margin-top:6px" data-a="closeSheet">Cancel</button>`;
+      break;
+    case 'phmeal': {
+      const f = s.f, fz = db.profile.fist;
+      b = `<h3>Plate of food</h3>
+        <div class="field"><div class="cap">What’s in it? (optional, but much more accurate)</div>
+          <textarea data-k="ing" placeholder="e.g. chicken thigh, white rice, broccoli, 1 tbsp olive oil">${esc(f.ing)}</textarea></div>
+        <button class="card row" style="width:100%;text-align:left;padding:14px;margin-bottom:10px;${f.fist ? 'outline:2px solid var(--ac)' : ''}" data-a="phFist">
+          <div style="font-size:24px">✊</div><div class="grow"><div style="font-weight:700">My fist is in the photo</div>
+          <div class="sub" style="font-size:13px;margin-top:2px">${fz ? `Used as a ruler · your fist: ${fistShort(fz)}` : 'Used as a ruler — you’ll measure it once'}</div></div>
+          <div style="font-weight:700;color:${f.fist ? 'var(--ac2)' : 'var(--t3)'}">${f.fist ? 'On' : 'Off'}</div></button>
+        ${f.fist ? `<div class="faint" style="font-size:13px;margin:0 4px 12px">Rest your fist on the table right next to the plate, knuckles up and fingers curled under — the same way you measured it. Shoot from above at a slight angle so the plate and fist are both fully in frame.</div>` : ''}
+        <div class="row" style="gap:8px"><button class="btn" data-a="closeSheet">Cancel</button><button class="btn pri" data-a="phShoot">📷 Take photo</button></div>`;
+      break;
+    }
+    case 'fistsize': {
+      const f = s.f, u = f.unit, ph = { w: [3.4, 8.6], l: [4.4, 11.2], h: [2.9, 7.4] };
+      b = `<h3>Measure your fist</h3>
+        <div class="muted" style="font-size:14px;margin-bottom:12px">You only do this once. The more of these you fill in, the better the AI can size your portions — only the first is needed.</div>
+        ${FIST_SVG}
+        <div class="card" style="font-size:13px;color:var(--t2);margin-bottom:14px"><b style="color:var(--t1)">For the best result</b><br>
+          • Use the hand you’ll put in your photos.<br>
+          • Make a firm fist and rest it on a table <b style="color:var(--t1)">knuckles up, fingers curled under</b> — the way it’ll sit next to your plate.<br>
+          • Use a tape measure or ruler and keep it straight, not wrapped around the hand.<br>
+          • Measure each one twice and enter the average.<br>
+          • No ruler? A credit card is 3.4 in (8.6 cm) on its long edge and 2.1 in (5.4 cm) on its short edge — line it up against each side and judge the difference.</div>
+        <div class="seg">${['in', 'cm'].map(k => `<button class="${u === k ? 'on' : ''}" data-a="fistUnit" data-v="${k}">${k === 'in' ? 'Inches' : 'Centimetres'}</button>`).join('')}</div>
+        ${FIST_DIMS.map(([k, name, how], i) => `<div class="field"><div class="cap">${i + 1} · ${name}${i ? ' (optional)' : ''} — ${u}</div>
+          <div class="faint" style="font-size:13px;margin:-2px 0 2px">${how}</div>
+          <input data-k="${k}" inputmode="decimal" value="${esc(f[k])}" placeholder="e.g. ${ph[k][u === 'cm' ? 1 : 0]}" style="text-align:center;font-weight:700;font-size:18px"></div>`).join('')}
+        <div class="cap" style="margin:0 4px 8px">Not sure? Pick the closest — fills all three</div>
+        <div class="chiprow wrap" style="margin-bottom:16px">${FIST_PRESETS.map(([l], i) => `<button class="chip sm" data-a="fistPreset" data-i="${i}">${l}</button>`).join('')}</div>
+        <div class="row" style="gap:8px"><button class="btn" data-a="closeSheet">Cancel</button><button class="btn pri" data-a="fistSave">Save</button></div>`;
+      break;
+    }
     case 'aiwait':
       b = `<div style="padding:26px 0 8px;text-align:center"><div class="spin"></div><div style="font-weight:600;margin-top:14px">Reading your photo…</div>
         <div class="muted" style="font-size:13px;margin-top:4px">Usually 5–15 seconds</div></div>
@@ -2322,7 +2578,8 @@ function doPick(ctx, id) {
     }
   } else if (ctx.mode === 'add') {
     const d = getDay(ctx.dayId);
-    if (d) { d.items.push({ id: uid(), exId: id, sets: 3, repMin: 8, repMax: 12, rest: null, start: null }); toast(`Added ${ex.name}`); }
+    const L = ctx.lib;   // library picks bring their own suggested sets & reps
+    if (d) { d.items.push({ id: uid(), exId: id, sets: L ? L.sets : 3, repMin: L ? L.rm[0] : 8, repMax: L ? L.rm[1] : 12, rest: null, start: null }); toast(`Added ${ex.name}`); }
   }
   save();
 }
@@ -2390,6 +2647,20 @@ const A = {
   restReset: () => { const r = db.active.rest; r.left = r.total; r.end = null; r.alarm = false; save(); render(); },
   // pickers & forms
   pick: d => { const s = ui.sheet; ui.sheet = null; doPick({ mode: s.mode, dayId: s.dayId }, d.id); render(); },
+  pickG: d => {
+    ui.sheet.g = d.v;
+    document.querySelectorAll('[data-a="pickG"]').forEach(b => b.classList.toggle('on', b.dataset.v === d.v));
+    pickFilter();
+    const sb = document.querySelector('.sheet .sbody'); if (sb) sb.scrollTop = 0;
+  },
+  pickLib: d => {   // copy a library exercise into your own list, then add/swap it like any other
+    const x = LIBRARY[+d.id], s = ui.sheet;
+    if (!x) return;
+    const have = Object.values(db.exercises).find(e => e.name.toLowerCase() === x.name.toLowerCase());
+    let id = have && have.id;
+    if (!id) { id = uid(); db.exercises[id] = { id, name: x.name, muscle: MUSCLES[x.prim] || '', equip: x.equip, setup: x.setup || '', rest: x.rest || 120, prim: x.prim, sec: x.sec.slice() }; }
+    ui.sheet = null; doPick({ mode: s.mode, dayId: s.dayId, lib: x }, id); render();
+  },
   newEx: () => {
     const s = ui.sheet, q = (document.getElementById('pick-search') || {}).value || '';
     const prim = guessMuscle(q) || 'chest';
@@ -2476,7 +2747,7 @@ const A = {
     fn: () => { db.sessions = db.sessions.filter(x => x.id !== d.id); save(); back(); } }),
   exportData: () => exportData(),
   importData: () => document.getElementById('import-file').click(),
-  resetRoutine: () => openSheet({ type: 'confirm', title: 'Reset routine?', msg: 'Your days and exercise library go back to the built-in routine. Workout history is kept.', ok: 'Reset routine', danger: true,
+  resetRoutine: () => openSheet({ type: 'confirm', title: 'Reset routine?', msg: 'Your days and exercises are replaced by the sample 5-day split. Workout history is kept.', ok: 'Load sample', danger: true,
     fn: () => { const s = seed(); db.exercises = s.exercises; db.days = s.days; save(); toast('Routine reset'); } }),
   eraseAll: () => openSheet({ type: 'confirm', title: 'Erase all data?', msg: 'Deletes every workout and edit on this phone. Export a backup first if you might want it.', ok: 'Erase everything', danger: true,
     fn: () => { db = seed(); save(); try { localStorage.removeItem(AI_KEY); } catch (e) {} ui.tab = 'home'; ui.view = { name: 'home' }; ui.stack = []; toast('All data erased'); } }),
@@ -2589,6 +2860,13 @@ const A = {
   fDel: () => { const s = ui.sheet, day = nDay(s.day); day.entries = day.entries.filter(x => x.id !== s.entryId); ui.sheet = null; save(); render(); },
   // nutrition: custom & saved foods
   nCustom: () => { const s = ui.view; openSheet({ type: 'fcustom', f: { name: s.q || '', brand: '', serving: '1 serving', grams: '', kcal: '', p: '', c: '', fat: '' }, meal: s.meal, day: s.day }); },
+  welcomeGo: d => {
+    const el = document.getElementById('w-name');
+    db.profile.name = el ? el.value.trim() : '';
+    if (d.v === 'empty') { db.exercises = {}; db.days = []; }
+    delete db.welcome; ui.sheet = null; save(); render();
+    if (d.v === 'empty') tab('workouts');
+  },
   nCustomCode: () => { const s = ui.sheet, v = ui.view; openSheet({ type: 'fcustom', code: s.code, f: { name: s.name || '', brand: s.brand || '', serving: '1 serving', grams: '', kcal: '', p: '', c: '', fat: '' }, meal: v.meal, day: v.day }); },
   // nutrition: barcode & photo
   nScan: () => {
@@ -2603,17 +2881,54 @@ const A = {
   },
   nBarcode: d => { toast('Looking up barcode…'); lookupBarcode(d.code); },
   nPhoto: () => {
-    const v = ui.view, s = ui.sheet;
-    // From "Try another photo" keep the barcode/name context of the first try.
-    if (!(s && s.type === 'aierr' && ui.photoCtx)) ui.photoCtx = { meal: v.meal, day: v.day, q: v.q || '', code: s && s.type === 'bcmiss' ? s.code : '', name: s && s.type === 'bcmiss' ? s.name : '' };
+    const v = ui.view, s = ui.sheet, retry = s && s.type === 'aierr' && ui.photoCtx, bc = s && s.type === 'bcmiss';
+    // "Try another photo" keeps everything from the first try; a missing barcode is always a label.
+    if (!retry) ui.photoCtx = { meal: v.meal, day: v.day, q: v.q || '', code: bc ? s.code : '', name: bc ? s.name : '', mode: bc ? 'label' : null };
     if (!aiKey()) { openSheet({ type: 'aikey' }); return; }
-    document.getElementById('photo-file').click();   // must stay synchronous: iOS only opens the picker from a tap
+    if (ui.photoCtx.mode) shootPhoto(); else openSheet({ type: 'phkind' });
+  },
+  phLabel: () => { ui.photoCtx.mode = 'label'; ui.photoCtx.ing = ''; ui.photoCtx.fist = null; shootPhoto(); },
+  phMeal: () => openSheet({ type: 'phmeal', f: { ing: ui.photoCtx.ing || '', fist: !!db.profile.fist } }),
+  phFist: () => { ui.sheet.f.fist = !ui.sheet.f.fist; render(); },
+  phShoot: () => {
+    const s = ui.sheet;
+    if (s.f.fist && !db.profile.fist) { openSheet({ type: 'fistsize', f: { w: '', l: '', h: '', unit: 'in' }, back: s }); return; }   // first use: measure once
+    Object.assign(ui.photoCtx, { mode: 'meal', ing: (s.f.ing || '').trim(), fist: s.f.fist ? db.profile.fist : null });
+    shootPhoto();
+  },
+  fistEdit: () => {
+    const v = fistOf(db.profile.fist) || {}, f = { unit: 'in' };
+    FIST_DIMS.forEach(([k]) => { f[k] = v[k] ? String(r1(v[k])) : ''; });
+    openSheet({ type: 'fistsize', f });
+  },
+  fistUnit: d => {   // convert whatever is typed so far
+    const f = ui.sheet.f;
+    if (d.v !== f.unit) FIST_DIMS.forEach(([k]) => { const n = parseFloat(f[k]); if (n > 0) f[k] = String(d.v === 'cm' ? r1(n * 2.54) : r1(n / 2.54)); });
+    f.unit = d.v; render();
+  },
+  fistPreset: d => {
+    const f = ui.sheet.f, p = FIST_PRESETS[+d.i];
+    FIST_DIMS.forEach(([k], i) => { f[k] = String(f.unit === 'cm' ? r1(p[i + 1] * 2.54) : p[i + 1]); });
+    render();
+  },
+  fistSave: () => {
+    const s = ui.sheet, cm = s.f.unit === 'cm', out = {};
+    for (const [k, name, , [lo, hi]] of FIST_DIMS) {
+      const raw = String(s.f[k] || '').trim();
+      if (!raw) { if (k === 'w') { toast('Enter at least your knuckle width'); return; } continue; }
+      const n = parseFloat(raw), inch = cm ? n / 2.54 : n;
+      if (!(inch >= lo && inch <= hi)) { toast(`${name} should be ${cm ? `${r0(lo * 2.54)}–${r0(hi * 2.54)} cm` : `${lo}–${hi} in`}`); return; }
+      out[k] = Math.round(inch * 100) / 100;
+    }
+    db.profile.fist = out; save();
+    if (s.back) { s.back.f.fist = true; ui.sheet = s.back; } else ui.sheet = null;
+    render(); toast(`Fist saved: ${fistShort(out)}`);
   },
   aiKeySave: (d, el) => {
     const inp = el.closest('.sheet, .card').querySelector('#ai-key'), k = (inp ? inp.value : '').trim();
     if (!/^sk-ant-\S{20,}$/.test(k)) { toast('That doesn’t look like an API key (sk-ant-…)'); return; }
     try { localStorage.setItem(AI_KEY, k); } catch (e) { toast('Couldn’t save the key'); return; }
-    if (ui.sheet && ui.sheet.type === 'aikey') { ui.sheet = null; render(); document.getElementById('photo-file').click(); }
+    if (ui.sheet && ui.sheet.type === 'aikey') { if (ui.photoCtx && ui.photoCtx.mode) { ui.sheet = null; render(); shootPhoto(); } else openSheet({ type: 'phkind' }); }
     else { render(); toast('Key saved'); }
   },
   aiKeyDel: () => { try { localStorage.removeItem(AI_KEY); } catch (e) {} render(); toast('Key removed'); },
@@ -2696,13 +3011,12 @@ document.addEventListener('input', e => {
     if (box && !ui.form.manual && ['age', 'weightLb', 'heightFt', 'heightIn', 'activity'].includes(t.dataset.fk)) box.innerHTML = targetsBox(ui.form);
     return;
   }
-  if (t.id === 'pick-search') {
-    const q = t.value.trim().toLowerCase();
-    document.querySelectorAll('[data-pn]').forEach(el => { el.hidden = !!q && !el.dataset.pn.includes(q); });
-  } else if (t.dataset.k && ui.sheet && ui.sheet.f) ui.sheet.f[t.dataset.k] = t.value;
+  if (t.id === 'pick-search') pickFilter();
+  else if (t.dataset.k && ui.sheet && ui.sheet.f) ui.sheet.f[t.dataset.k] = t.value;
 });
 document.addEventListener('change', e => {
   if (e.target.id === 'stats-ex') { ui.statsEx = e.target.value; render(); }
+  else if (e.target.id === 'p-name') { db.profile.name = e.target.value.trim(); save(); }
   else if (e.target.dataset.k && ui.sheet && ui.sheet.f) ui.sheet.f[e.target.dataset.k] = e.target.value;
 });
 let askedPersist = false;
@@ -2739,7 +3053,7 @@ if (navigator.storage && navigator.storage.persisted) navigator.storage.persiste
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-render();
+if (db.welcome) openSheet({ type: 'welcome' }); else render();
 })();
 </script>
 </body>
